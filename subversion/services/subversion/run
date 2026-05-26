@@ -1,0 +1,2 @@
+#!/command/with-contenv sh
+exec /usr/bin/svnserve -d --foreground -r /home/svn --listen-port 3690;
