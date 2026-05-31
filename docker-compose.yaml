@@ -1,0 +1,10 @@
+services:
+  subversion:
+    build:
+      context: ./subversion
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3690:3690"
+      
