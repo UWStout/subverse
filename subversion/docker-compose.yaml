@@ -1,0 +1,28 @@
+services:
+  subversion:
+    # Use the local Dockerfile
+    build: .
+
+    # Ports for apache and svn: protocol
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3690:3690"
+
+    # Config and data mounts
+    volumes:
+      - ./config/apache2:/etc/apache2
+      - ./config/subversion:/etc/subversion
+      - svn_repo_root:
+
+    # Healthcheck (mostly for apache)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  svn-repo-root:
+    external: true

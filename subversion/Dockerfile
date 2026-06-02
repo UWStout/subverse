@@ -9,8 +9,7 @@ RUN apk update &&\
 RUN mkdir -p /run/apache2/ && mkdir /home/svn/ && mkdir /etc/subversion &&\
  touch /etc/subversion/passwd
 
-# Add access control file for SVNAuth
-ADD subversion-access-control /etc/subversion/subversion-access-control
+# Adjust permissions for config and repo folders
 RUN chmod a+w /etc/subversion/* && chmod a+w /home/svn
 
 # Install PHP with extensions for SVNAdmin
@@ -23,10 +22,8 @@ RUN git clone --depth 1 https://github.com/mfreiholz/iF.SVNAdmin.git ./svnadmin 
 	ln -s /opt/svnadmin /var/www/localhost/htdocs/svnadmin &&\
 	chmod -R 777 /opt/svnadmin/data
 
-# ADD svnadmin/classes/util/global.func.php /opt/svnadmin/classes/util/global.func.php
-
 # Add WebDav configuration
-ADD dav_svn.conf /etc/apache2/conf.d/dav_svn.conf
+ADD ./config/dav_svn.conf /etc/apache2/conf.d/dav_svn.conf
 
 # Add services configurations (s6-overlay v3)
 ADD services/apache/ /etc/s6-overlay/s6-rc.d/apache/
