@@ -1,2 +1,10 @@
 include:
-  - ./subversion/docker-compose.yml
+  - ./subversion/docker-compose.yaml
+
+volumes:
+  svn-root:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/svn-root

@@ -1,28 +1,64 @@
 services:
-  subversion:
-    # Use the local Dockerfile
-    build: .
+  # Base SVN gateway with WEBDAV and svnserve services running
+  svn_gateway:
+    hostname: svn_gateway
+    build:
+      dockerfile: Dockerfile.svn-gateway
 
-    # Ports for apache and svn: protocol
-    ports:
-      - "80:80"
-      - "443:443"
-      - "3690:3690"
-
-    # Config and data mounts
+    ports: ["80:80", "443:443", "3690:3690"]
     volumes:
-      - ./config/apache2:/etc/apache2
-      - ./config/subversion:/etc/subversion
-      - svn_repo_root:
+      - svn-root:/home/svn
+      - apache2-gateway-config:/etc/apache2
+      - subversion-config:/etc/subversion
 
-    # Healthcheck (mostly for apache)
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
+  # Administrator service with PHP + 'svnadmin' (and no WEBDAV or svnserve)
+  svn_admin:
+    hostname: svn_admin
+    build:
+      dockerfile: Dockerfile.svn-admin
 
+    ports: ["8080:80"]
+    volumes:
+      - svn-root:/home/svn
+      - apache2-admin-config:/etc/apache2
+      - subversion-config:/etc/subversion
+      - php-config:/etc/php84
+      - svnadmin-config:/opt/svnadmin/data
+
+# Named volumes for local configs
+# - PWD will be the root docker-compose file (not this folder)
 volumes:
-  svn-repo-root:
-    external: true
+  apache2-gateway-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/subversion/config/apache2-gateway
+
+  apache2-admin-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/subversion/config/apache2-admin
+
+  php-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/subversion/config/php
+
+  subversion-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/subversion/config/subversion
+
+  svnadmin-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/subversion/config/svnadmin

@@ -1,0 +1,24 @@
+FROM crazymax/alpine-s6
+
+# Install git client, subversion, and Apache2 with PHP
+RUN apk update &&\
+  apk add --no-cache git subversion apache2 apache2-utils &&\
+  apk add --no-cache php84 php84-apache2 php84-session php84-json php84-ldap php84-xml &&\
+	sed -i 's/;extension=ldap/extension=ldap/' /etc/php84/php.ini &&\
+  echo '<?php phpinfo(); ?>' > /var/www/localhost/htdocs/index.php
+
+# Install svn-admin package
+RUN git clone --depth 1 https://github.com/mfreiholz/iF.SVNAdmin.git ./svnadmin &&\
+	mv ./svnadmin /opt/svnadmin &&\
+	ln -s /opt/svnadmin /var/www/localhost/htdocs/svnadmin &&\
+	chmod -R 777 /opt/svnadmin/data
+
+# Add apache service only (s6-overlay v3)
+ADD services/apache/ /etc/s6-overlay/s6-rc.d/apache/
+RUN touch /etc/s6-overlay/s6-rc.d/user/contents.d/apache
+
+# Setup a PHP healthcheck file
+RUN echo '<?php apache_setenv("dontlog", "1"); http_response_code(200); echo "OK"; ?>' > /var/www/localhost/htdocs/health.php
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost || exit 1; \
+      wget -q -O- http://localhost/health.php || exit 1
