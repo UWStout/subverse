@@ -24,7 +24,7 @@ services:
       traefik.docker.network: "traefik"
 
       # Subversion WebDAV service & router configuration for traefik
-      traefik.http.services.svn_dav.loadbalancer.server.port: 80
+      traefik.http.services.svn_dav.loadbalancer.server.port: 8080
       traefik.http.routers.svn_dav.service: svn_dav
       traefik.http.routers.svn_dav.rule: Host(`svndav.stoutrepodepot.com`)
       traefik.http.routers.svn_dav.entrypoints: websecure
@@ -68,7 +68,7 @@ services:
       traefik.docker.network: "traefik"
 
       # IF.SVNAdmin service & router configuration for traefik
-      traefik.http.services.svnadmin.loadbalancer.server.port: 80
+      traefik.http.services.svnadmin.loadbalancer.server.port: 8080
       traefik.http.routers.svnadmin.service: svnadmin
       traefik.http.routers.svnadmin.rule: Host(`svnadmin.stoutrepodepot.com`)
       traefik.http.routers.svnadmin.entrypoints: websecure
