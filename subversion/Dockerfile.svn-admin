@@ -16,5 +16,5 @@ RUN touch /etc/s6-overlay/s6-rc.d/user/contents.d/apache
 # Setup a PHP healthcheck file
 RUN echo '<?php apache_setenv("dontlog", "1"); http_response_code(200); echo "OK"; ?>' > /var/www/localhost/htdocs/health.php
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost || exit 1; \
-      wget -q -O- http://localhost/health.php || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1; \
+      wget -q -O- http://localhost:8080/health.php || exit 1
