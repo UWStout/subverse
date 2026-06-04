@@ -3,6 +3,7 @@ services:
   svn_gateway:
     build:
       dockerfile: Dockerfile.svn-gateway
+    restart: unless-stopped
 
     ports: ["80:80", "443:443", "3690:3690"]
     volumes:
@@ -10,10 +11,14 @@ services:
       - apache2-gateway-config:/etc/apache2
       - subversion-config:/etc/subversion
 
+    environment:
+      TZ: 'America/Chicago'
+
   # Administrator service with PHP + 'svnadmin' (and no WEBDAV or svnserve)
   svn_admin:
     build:
       dockerfile: Dockerfile.svn-admin
+    restart: unless-stopped
 
     ports: ["8080:80"]
     volumes:
@@ -22,6 +27,9 @@ services:
       - subversion-config:/etc/subversion
       - php-config:/etc/php84
       - svnadmin-config:/opt/svnadmin/data
+
+    environment:
+      TZ: 'America/Chicago'
 
 # Named volumes for local configs
 # - PWD will be the root docker-compose file (not this folder)
