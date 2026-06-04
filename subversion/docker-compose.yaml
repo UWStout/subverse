@@ -3,6 +3,7 @@ services:
   svn_gateway:
     container_name: svn_gateway
     build:
+      context: .
       dockerfile: Dockerfile.svn-gateway
     restart: unless-stopped
 
@@ -44,6 +45,7 @@ services:
   svn_admin:
     container_name: svn_admin
     build:
+      context: .
       dockerfile: Dockerfile.svn-admin
     restart: unless-stopped
 

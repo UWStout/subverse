@@ -6,9 +6,9 @@ networks:
       com.docker.network.bridge.name: br-docker-trfk
 
 include:
-  - path: traefik/docker-compose.yaml
-  - path: portainer/docker-compose.yaml
-  - path: subversion/docker-compose.yaml
+  - path: ./traefik/docker-compose.yaml
+  - path: ./portainer/docker-compose.yaml
+  - path: ./subversion/docker-compose.yaml
 
 volumes:
   svn-root:
@@ -16,11 +16,11 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${PWD}/svn-root
+      device: /volume1/subverse-data/svn-root
 
   gitlab-root:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${PWD}/gitlab-root
+      device: /volume1/subverse-data/gitlab-root
