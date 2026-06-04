@@ -1,70 +1,75 @@
 services:
   # Base SVN gateway with WEBDAV and svnserve services running
   svn_gateway:
+    container_name: svn_gateway
     build:
       dockerfile: Dockerfile.svn-gateway
     restart: unless-stopped
 
-    ports: ["80:80", "443:443", "3690:3690"]
     volumes:
       - svn-root:/var/svn
-      - apache2-gateway-config:/etc/apache2
-      - subversion-config:/etc/subversion
+      - ./config/apache2-gateway:/etc/apache2
+      - ./config/subversion:/etc/subversion
 
     environment:
       TZ: 'America/Chicago'
 
+    networks:
+      - traefik
+
+    labels:
+      # Enable as a 'traefik' service and configure
+      traefik.enable: true
+      traefik.docker.network: "traefik"
+
+      # Subversion WebDAV service & router configuration for traefik
+      traefik.http.services.svn_dav.loadbalancer.server.port: 80
+      traefik.http.routers.svn_dav.service: svn_dav
+      traefik.http.routers.svn_dav.rule: Host(`svndav.stoutrepodepot.com`)
+      traefik.http.routers.svn_dav.entrypoints: websecure
+      traefik.http.routers.svn_dav.tls.certresolver: myresolver
+      traefik.http.routers.svn_dav.tls.domains[0].main: stoutrepotdepot.com
+      traefik.http.routers.svn_dav.tls.domains[0].sans: "*.stoutrepodepot.com"
+
+      # Subversion svnserve service & router configuration for traefik
+      traefik.http.services.svn_serve.loadbalancer.server.port: 3690
+      traefik.http.routers.svn_serve.service: svn_serve
+      traefik.http.routers.svn_serve.rule: Host(`svnserve.stoutrepodepot.com`)
+      traefik.http.routers.svn_serve.entrypoints: websecure
+      traefik.http.routers.svn_serve.tls.certresolver: myresolver
+      traefik.http.routers.svn_serve.tls.domains[0].main: stoutrepotdepot.com
+      traefik.http.routers.svn_serve.tls.domains[0].sans: "*.stoutrepodepot.com"
+
   # Administrator service with PHP + 'svnadmin' (and no WEBDAV or svnserve)
   svn_admin:
+    container_name: svn_admin
     build:
       dockerfile: Dockerfile.svn-admin
     restart: unless-stopped
 
-    ports: ["8080:80"]
     volumes:
       - svn-root:/var/svn
-      - apache2-admin-config:/etc/apache2
-      - subversion-config:/etc/subversion
-      - php-config:/etc/php84
-      - svnadmin-config:/opt/svnadmin/data
+      - ./config/apache2-admin:/etc/apache2
+      - ./config/subversion:/etc/subversion
+      - ./config/php:/etc/php84
+      - ./config/svnadmin:/opt/svnadmin/data
 
     environment:
       TZ: 'America/Chicago'
 
-# Named volumes for local configs
-# - PWD will be the root docker-compose file (not this folder)
-volumes:
-  apache2-gateway-config:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/subversion/config/apache2-gateway
+    networks:
+      - traefik
 
-  apache2-admin-config:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/subversion/config/apache2-admin
+    labels:
+      # Enable as a 'traefik' service and configure
+      traefik.enable: true
+      traefik.docker.network: "traefik"
 
-  php-config:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/subversion/config/php
-
-  subversion-config:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/subversion/config/subversion
-
-  svnadmin-config:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/subversion/config/svnadmin
+      # IF.SVNAdmin service & router configuration for traefik
+      traefik.http.services.svnadmin.loadbalancer.server.port: 80
+      traefik.http.routers.svnadmin.service: svnadmin
+      traefik.http.routers.svnadmin.rule: Host(`svnadmin.stoutrepodepot.com`)
+      traefik.http.routers.svnadmin.entrypoints: websecure
+      traefik.http.routers.svnadmin.tls.certresolver: myresolver
+      traefik.http.routers.svnadmin.tls.domains[0].main: stoutrepotdepot.com
+      traefik.http.routers.svnadmin.tls.domains[0].sans: "*.stoutrepodepot.com"

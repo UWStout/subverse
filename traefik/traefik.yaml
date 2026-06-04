@@ -1,0 +1,42 @@
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    forwardedHeaders:
+      trustedIPs:
+        - "97.90.231.12"
+        - "172.19.0.1/24"
+
+api:
+  dashboard: true
+  debug: false
+  insecure: false
+
+log:
+  filePath: './logs/traefik.log'
+  level: 'INFO'
+
+accessLog:
+  filePath: './logs/access.log'
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false # Secure: only expose labeled containers
+  file:
+    filename: './dynamic.yaml'
+
+certificatesResolvers:
+  myresolver:
+    acme:
+      email: seth.berrier@gmail.com
+      storage: /etc/traefik/acme.json
+      dnsChallenge:
+        provider: porkbun
+        delayBeforeCheck: 10

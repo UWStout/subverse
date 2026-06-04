@@ -1,0 +1,29 @@
+services:
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:sts
+    restart: unless-stopped
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./portainer_data:/data
+
+    environment:
+      TZ: 'America/Chicago'
+
+    networks:
+      - traefik
+
+    labels:
+      # Enable as a 'traefik' service and configure
+      traefik.enable: true
+      traefik.docker.network: "traefik"
+      traefik.http.services.portainer.loadbalancer.server.port: 9000
+
+      # Portainer service & router configuration for traefik
+      traefik.http.routers.portainer.service: portainer
+      traefik.http.routers.portainer.rule: Host(`dash.stoutrepodepot.com`)
+      traefik.http.routers.portainer.entrypoints: websecure
+      traefik.http.routers.portainer.tls.certresolver: myresolver
+      traefik.http.routers.portainer.tls.domains[0].main: stoutrepotdepot.com
+      traefik.http.routers.portainer.tls.domains[0].sans: "*.stoutrepodepot.com"

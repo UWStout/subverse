@@ -1,3 +1,18 @@
+# Secret environment files
 .env
+*.env
+
+# Subversion Repositories
 svn-root/*
 !svn-root/.gitkeep
+
+# GitLab Repositories
+gitlab-root/*
+!gitlab-root/.gitkeep
+
+# Traefik logs and certs
+traefik/acme.json
+traefik/logs
+
+# Portainer Data
+portainer/portainer_data

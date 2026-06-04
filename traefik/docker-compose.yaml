@@ -1,0 +1,52 @@
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
+    ports:
+      - "80:80"     # HTTP Traffic
+      - "443:443"   # HTTPS Traffic
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Listen to Docker
+      - ./traefik.yaml:/traefik.yaml:ro               # Static Config
+      - ./dynamic.yaml:/dynamic.yaml                  # Dynamic services
+      - traefik_certs:/etc/traefik                    # SSL Certs
+      - ./logs:/logs                                  # Folder for logs
+    environment:
+      TZ: 'America/Chicago'
+    env_file:
+      - .secrets.env
+    networks:
+      - traefik
+
+    labels:
+      traefik.enable: true
+
+      # CORS Middleware
+      traefik.http.middlewares.cors.headers.accesscontrolallowheaders: '*'
+      traefik.http.middlewares.cors.headers.accesscontrolallowmethods: 'GET,POST,PUT'
+      traefik.http.middlewares.cors.headers.accesscontrolmaxage: 100
+      traefik.http.middlewares.cors.headers.addvaryheader: true
+
+      # Secure Headers Middleware
+      traefik.http.middlewares.secure-headers.headers.frameDeny: true
+      traefik.http.middlewares.secure-headers.headers.sslRedirect: true
+      traefik.http.middlewares.secure-headers.headers.browserXssFilter: true
+      traefik.http.middlewares.secure-headers.headers.contentTypeNosniff: true
+      traefik.http.middlewares.secure-headers.headers.stsIncludeSubdomains: true
+      traefik.http.middlewares.secure-headers.headers.stsPreload: true
+      traefik.http.middlewares.secure-headers.headers.stsSeconds: 31536000
+
+      # Dashboard Service (internal)
+      traefik.http.routers.dashboard.rule: Host(`traefik.stoutrepodepot.com`)
+      traefik.http.routers.dashboard.service: api@internal
+      traefik.http.routers.dashboard.entrypoints: websecure
+      traefik.http.routers.dashboard.tls.certresolver: myresolver
+      traefik.http.routers.dashboard.tls.domains[0].main: stoutrepodepot.com
+      traefik.http.routers.dashboard.tls.domains[0].sans: "*.stoutrepodepot.com"
+      traefik.http.routers.dashboard.middlewares: secure-headers
+
+volumes:
+  traefik_certs:
