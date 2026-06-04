@@ -1,12 +1,7 @@
-FROM crazymax/alpine-s6
+FROM svn-base
 
 # Install Apache2 with modules and utilities and Subversion
-RUN apk update &&\
- apk add --no-cache apache2 apache2-utils apache2-webdav mod_dav_svn &&\
- apk add --no-cache subversion
-
-# Create directory for the apache pid while it is running
-RUN mkdir -p /run/apache2/
+RUN apk add --no-cache apache2-webdav mod_dav_svn
 
 # Add services configurations (s6-overlay v3)
 ADD services/apache/ /etc/s6-overlay/s6-rc.d/apache/
@@ -14,7 +9,7 @@ ADD services/subversion/ /etc/s6-overlay/s6-rc.d/subversion/
 
 # Add our services to the user bundle for startup
 RUN touch /etc/s6-overlay/s6-rc.d/user/contents.d/apache &&\
-  touch /etc/s6-overlay/s6-rc.d/user/contents.d/subversion
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/subversion
 
 # Healthcheck that tests both Apache and the 'svnserve' daemon
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

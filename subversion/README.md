@@ -8,3 +8,8 @@ This was initially created by following [Luca's blog post](https://medium.com/@e
 - Swapped from the 'smebberson' alpine-s6 base to the newer crazymax/alpine-s6 base.
 - Adjusted services for apache and subversion to use s6-overlay v3 syntax (based on s6-rc).
 - Clones the IF.SVNAdmin repo for latest dev changes (instead of using the 1.6.2 zip archive).
+- SVNAdmin is now a separate service orchestrated with docker compose. Main subversion service now excludes PHP entirely.
+- Config files for Apache, Subversion, PHP, and IF.SVNAdmin are mounted from local folders allowing for easy customization.
+- Updated the apache and subversion configurations to harden security and disable unneeded features.
+- Switched to using the more standard /var/svn folder as the repo root
+- Main S6 Apache and svnserve services no longer run as root

@@ -1,0 +1,19 @@
+FROM crazymax/alpine-s6
+
+# Create a disabled, non-root user to occupy UID 100 (so UIDs and GIDs align)
+RUN adduser -u 100 -G users -h /home/appuser -s /sbin/nologin -D appuser
+
+# Install git client, subversion, and Apache2
+RUN apk add --no-cache git subversion apache2 apache2-utils
+
+# Create dirs for service PIDs and set proper permissions
+RUN mkdir -p /run/apache2/ && chown apache:apache /run/apache2 &&\
+    mkdir -p /run/svnserve/ && chown svn:svnusers /run/svnserve
+
+# Set owner for apache log folder to allow running as 'apache'
+RUN chown -R apache:apache /var/log/apache2
+
+# Set owning group for repository home folder and update default umask to have group write perms
+RUN chgrp -R svnusers /var/svn && chmod -R g+rwxs /var/svn &&\
+    echo "umask 0002" >> /etc/profile &&\
+    addgroup apache svnusers

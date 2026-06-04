@@ -1,17 +1,13 @@
-FROM crazymax/alpine-s6
+FROM svn-base
 
 # Install git client, subversion, and Apache2 with PHP
-RUN apk update &&\
-  apk add --no-cache git subversion apache2 apache2-utils &&\
-  apk add --no-cache php84 php84-apache2 php84-session php84-json php84-ldap php84-xml &&\
-	sed -i 's/;extension=ldap/extension=ldap/' /etc/php84/php.ini &&\
-  echo '<?php phpinfo(); ?>' > /var/www/localhost/htdocs/index.php
+RUN apk add --no-cache php84 php84-apache2 php84-session php84-json php84-ldap php84-xml &&\
+	sed -i 's/;extension=ldap/extension=ldap/' /etc/php84/php.ini
 
 # Install svn-admin package
 RUN git clone --depth 1 https://github.com/mfreiholz/iF.SVNAdmin.git ./svnadmin &&\
-	mv ./svnadmin /opt/svnadmin &&\
-	ln -s /opt/svnadmin /var/www/localhost/htdocs/svnadmin &&\
-	chmod -R 777 /opt/svnadmin/data
+	mv ./svnadmin /opt/svnadmin && chown -R apache:apache /opt/svnadmin &&\
+	ln -s /opt/svnadmin /var/www/localhost/htdocs/svnadmin
 
 # Add apache service only (s6-overlay v3)
 ADD services/apache/ /etc/s6-overlay/s6-rc.d/apache/

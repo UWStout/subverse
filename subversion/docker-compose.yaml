@@ -1,25 +1,23 @@
 services:
   # Base SVN gateway with WEBDAV and svnserve services running
   svn_gateway:
-    hostname: svn_gateway
     build:
       dockerfile: Dockerfile.svn-gateway
 
     ports: ["80:80", "443:443", "3690:3690"]
     volumes:
-      - svn-root:/home/svn
+      - svn-root:/var/svn
       - apache2-gateway-config:/etc/apache2
       - subversion-config:/etc/subversion
 
   # Administrator service with PHP + 'svnadmin' (and no WEBDAV or svnserve)
   svn_admin:
-    hostname: svn_admin
     build:
       dockerfile: Dockerfile.svn-admin
 
     ports: ["8080:80"]
     volumes:
-      - svn-root:/home/svn
+      - svn-root:/var/svn
       - apache2-admin-config:/etc/apache2
       - subversion-config:/etc/subversion
       - php-config:/etc/php84

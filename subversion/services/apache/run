@@ -1,2 +1,7 @@
 #!/command/with-contenv sh
-exec /usr/sbin/httpd -DFOREGROUND;
+
+# Remove any existing PID file that might prevent Apache from starting
+rm -f /run/apache2/httpd.pid
+
+# Drop privileges to user 'apache' and execute apache2 in the foreground
+exec s6-setuidgid apache /usr/sbin/httpd -DFOREGROUND

@@ -1,2 +1,11 @@
 #!/command/with-contenv sh
-exec /usr/bin/svnserve -d --foreground -r /home/svn --listen-port 3690;
+
+# Remove any existing PID file that might prevent SVNServe from starting
+rm -f /run/svnserve/svnserve.pid
+
+# Drop privileges to user 'svn' and execute apache2 in the foreground
+exec s6-setuidgid svn /usr/bin/svnserve \
+  -d --foreground \
+  --pid-file /run/svnserve/svnserve.pid \
+  -r /var/svn \
+  --listen-port 3690
