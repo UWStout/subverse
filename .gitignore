@@ -1,6 +1,7 @@
-# Secret environment files
+# Secret environment files and certificates
 .env
 *.env
+certs
 
 # Subversion Repositories
 svn-root/*

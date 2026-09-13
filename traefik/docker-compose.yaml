@@ -12,7 +12,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Listen to Docker
       - ./traefik.yaml:/traefik.yaml:ro               # Static Config
       - ./dynamic.yaml:/dynamic.yaml                  # Dynamic services
-      - traefik_certs:/etc/traefik                    # SSL Certs
+      - ./certs:/certs:ro                             # Local self-signed SSL certs
+      - traefik_certs:/etc/traefik                    # Real authorized SSL Certs
       - ./logs:/logs                                  # Folder for logs
     environment:
       TZ: 'America/Chicago'
@@ -40,12 +41,11 @@ services:
       traefik.http.middlewares.secure-headers.headers.stsSeconds: 31536000
 
       # Dashboard Service (internal)
-      traefik.http.routers.dashboard.rule: Host(`traefik.stoutrepodepot.com`)
+      # traefik.http.routers.dashboard.rule: PathPrefix(`/dashboard`) || PathPrefix(`/api`)
+      traefik.http.routers.dashboard.rule: Host(`dash.subverse`)
       traefik.http.routers.dashboard.service: api@internal
       traefik.http.routers.dashboard.entrypoints: websecure
-      traefik.http.routers.dashboard.tls.certresolver: myresolver
-      traefik.http.routers.dashboard.tls.domains[0].main: stoutrepodepot.com
-      traefik.http.routers.dashboard.tls.domains[0].sans: "*.stoutrepodepot.com"
+      traefik.http.routers.dashboard.tls: true
       traefik.http.routers.dashboard.middlewares: secure-headers
 
 volumes:

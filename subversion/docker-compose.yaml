@@ -24,22 +24,18 @@ services:
       traefik.docker.network: "traefik"
 
       # Subversion WebDAV service & router configuration for traefik
-      traefik.http.services.svn_dav.loadbalancer.server.port: 8080
-      traefik.http.routers.svn_dav.service: svn_dav
-      traefik.http.routers.svn_dav.rule: Host(`svndav.stoutrepodepot.com`)
-      traefik.http.routers.svn_dav.entrypoints: websecure
-      traefik.http.routers.svn_dav.tls.certresolver: myresolver
-      traefik.http.routers.svn_dav.tls.domains[0].main: stoutrepotdepot.com
-      traefik.http.routers.svn_dav.tls.domains[0].sans: "*.stoutrepodepot.com"
+      traefik.http.services.svn_gateway.loadbalancer.server.port: "8080"
+      traefik.http.routers.svn_gateway.service: "svn_gateway"
+      traefik.http.routers.svn_gateway.rule: "Host(`svn.subverse`)"
+      traefik.http.routers.svn_gateway.entrypoints: "websecure"
+      traefik.http.routers.svn_gateway.tls: "true"
 
       # Subversion svnserve service & router configuration for traefik
-      traefik.http.services.svn_serve.loadbalancer.server.port: 3690
-      traefik.http.routers.svn_serve.service: svn_serve
-      traefik.http.routers.svn_serve.rule: Host(`svnserve.stoutrepodepot.com`)
-      traefik.http.routers.svn_serve.entrypoints: websecure
-      traefik.http.routers.svn_serve.tls.certresolver: myresolver
-      traefik.http.routers.svn_serve.tls.domains[0].main: stoutrepotdepot.com
-      traefik.http.routers.svn_serve.tls.domains[0].sans: "*.stoutrepodepot.com"
+      # traefik.http.services.svn_serve.loadbalancer.server.port: 3690
+      # traefik.http.routers.svn_serve.service: svn_serve
+      # traefik.http.routers.svn_serve.rule: PathPrefix(`/svn`)
+      # traefik.http.routers.svn_serve.entrypoints: websecure
+      # traefik.http.routers.svn_serve.tls: true
 
   # Administrator service with PHP + 'svnadmin' (and no WEBDAV or svnserve)
   svn_admin:
@@ -70,8 +66,6 @@ services:
       # IF.SVNAdmin service & router configuration for traefik
       traefik.http.services.svnadmin.loadbalancer.server.port: 8080
       traefik.http.routers.svnadmin.service: svnadmin
-      traefik.http.routers.svnadmin.rule: Host(`svnadmin.stoutrepodepot.com`)
+      traefik.http.routers.svnadmin.rule: Host(`svnadmin.subverse`)
       traefik.http.routers.svnadmin.entrypoints: websecure
-      traefik.http.routers.svnadmin.tls.certresolver: myresolver
-      traefik.http.routers.svnadmin.tls.domains[0].main: stoutrepotdepot.com
-      traefik.http.routers.svnadmin.tls.domains[0].sans: "*.stoutrepodepot.com"
+      traefik.http.routers.svnadmin.tls: true

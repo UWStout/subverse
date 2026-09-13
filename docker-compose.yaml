@@ -23,4 +23,4 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /volume1/subverse-data/gitlab-root
+      device: /volume1/subverse-data/git-root

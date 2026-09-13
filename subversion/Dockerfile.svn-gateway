@@ -5,13 +5,10 @@ RUN apk add --no-cache apache2-webdav mod_dav_svn
 
 # Add services configurations (s6-overlay v3)
 ADD services/apache/ /etc/s6-overlay/s6-rc.d/apache/
-ADD services/subversion/ /etc/s6-overlay/s6-rc.d/subversion/
 
 # Add our services to the user bundle for startup
-RUN touch /etc/s6-overlay/s6-rc.d/user/contents.d/apache &&\
-    touch /etc/s6-overlay/s6-rc.d/user/contents.d/subversion
+RUN touch /etc/s6-overlay/s6-rc.d/user/contents.d/apache
 
 # Healthcheck that tests both Apache and the 'svnserve' daemon
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080 || exit 1; \
-      nc -z 127.0.0.1 3690 || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080 || exit 1

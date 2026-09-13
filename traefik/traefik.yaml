@@ -32,11 +32,11 @@ providers:
   file:
     filename: './dynamic.yaml'
 
-certificatesResolvers:
-  myresolver:
-    acme:
-      email: seth.berrier@gmail.com
-      storage: /etc/traefik/acme.json
-      dnsChallenge:
-        provider: porkbun
-        delayBeforeCheck: 10
+# certificatesResolvers:
+#   myresolver:
+#     acme:
+#       email: seth.berrier@gmail.com
+#       storage: /etc/traefik/acme.json
+#       dnsChallenge:
+#         provider: porkbun
+#         delayBeforeCheck: 10

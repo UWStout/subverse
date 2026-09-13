@@ -22,8 +22,9 @@ services:
 
       # Portainer service & router configuration for traefik
       traefik.http.routers.portainer.service: portainer
-      traefik.http.routers.portainer.rule: Host(`dash.stoutrepodepot.com`)
+      # traefik.http.routers.portainer.rule: PathPrefix(`/dock`)
+      traefik.http.routers.portainer.rule: Host(`dock.subverse`)
       traefik.http.routers.portainer.entrypoints: websecure
-      traefik.http.routers.portainer.tls.certresolver: myresolver
-      traefik.http.routers.portainer.tls.domains[0].main: stoutrepotdepot.com
-      traefik.http.routers.portainer.tls.domains[0].sans: "*.stoutrepodepot.com"
+      traefik.http.routers.portainer.tls: true
+      # traefik.http.middlewares.portainer-strip.stripprefix.prefixes: /dock
+      # traefik.http.routers.portainer.middlewares: portainer-strip
