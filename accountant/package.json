@@ -1,0 +1,23 @@
+{
+  "name": "accountant",
+  "version": "1.0.0",
+  "description": "A backend SVN account management tool with email verification.",
+  "keywords": [
+    "subversion",
+    "SVN",
+    "accounts",
+    "REST",
+    "API"
+  ],
+  "license": "MIT",
+  "author": "Seth Berrier",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

@@ -17,3 +17,6 @@ traefik/logs
 
 # Portainer Data
 portainer/portainer_data
+
+# Dependency caches
+node_modules

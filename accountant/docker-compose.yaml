@@ -1,0 +1,25 @@
+services:
+  accountant-api:
+    build:
+      context: .
+      target: development # change to 'production' when deployed
+    container_name: accountant-api
+    restart: unless-stopped
+    volumes: # Remove when deployed
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+
+    networks:
+      - traefik
+
+    labels:
+      # Enable as a 'traefik' service and configure
+      traefik.enable: true
+      traefik.docker.network: "traefik"
+
+      # Accountant API service & router configuration for traefik
+      traefik.http.services.accountant.loadbalancer.server.port: "3000"
+      traefik.http.routers.accountant.service: "accountant"
+      traefik.http.routers.accountant.rule: "Host(`account.subverse`)"
+      traefik.http.routers.accountant.entrypoints: "websecure"
+      traefik.http.routers.accountant.tls: "true"

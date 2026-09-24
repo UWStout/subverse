@@ -30,13 +30,6 @@ services:
       traefik.http.routers.svn_gateway.entrypoints: "websecure"
       traefik.http.routers.svn_gateway.tls: "true"
 
-      # Subversion svnserve service & router configuration for traefik
-      # traefik.http.services.svn_serve.loadbalancer.server.port: 3690
-      # traefik.http.routers.svn_serve.service: svn_serve
-      # traefik.http.routers.svn_serve.rule: PathPrefix(`/svn`)
-      # traefik.http.routers.svn_serve.entrypoints: websecure
-      # traefik.http.routers.svn_serve.tls: true
-
   # Administrator service with PHP + 'svnadmin' (and no WEBDAV or svnserve)
   svn_admin:
     container_name: svn_admin
