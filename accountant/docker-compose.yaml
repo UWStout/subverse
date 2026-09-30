@@ -8,6 +8,7 @@ services:
     volumes: # Remove when deployed
       - .:/usr/src/app
       - /usr/src/app/node_modules
+      - accountant-data:/usr/src/app/data
 
     networks:
       - traefik
@@ -23,3 +24,6 @@ services:
       traefik.http.routers.accountant.rule: "Host(`account.subverse`)"
       traefik.http.routers.accountant.entrypoints: "websecure"
       traefik.http.routers.accountant.tls: "true"
+
+volumes:
+  accountant-data:
