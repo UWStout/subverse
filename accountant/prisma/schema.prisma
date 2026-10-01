@@ -1,0 +1,94 @@
+// This is your Prisma schema file (data models only).
+// Configuration is in prisma.config.ts at the project root.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../server/prisma"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id                   Int        @id @default(autoincrement())
+  username             String     @unique
+  email                String     @unique
+  password_hash        String     @map("password_hash")
+  type                 UserType   @default(STUDENT)
+  verification_token   String?    @map("verification_token")
+  verification_sent_at DateTime?  @map("verification_sent_at")
+  reset_token          String?    @map("reset_token")
+  reset_sent_at        DateTime?  @map("reset_sent_at")
+  created_at           DateTime   @default(now()) @map("created_at")
+  updated_at           DateTime   @default(now()) @map("updated_at")
+
+  taught_offerings     Offering[] @relation("TeacherOfferings")
+  assignments          Assignment[]
+
+  @@index([username])
+  @@index([email])
+  @@map("users")
+}
+
+enum UserType {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+model Class {
+  id            Int      @id @default(autoincrement())
+  subject_code  String   @map("subject_code")
+  number        String
+  title         String
+
+  offerings     Offering[]
+
+  @@unique([subject_code, number])
+  @@index([subject_code])
+  @@map("classes")
+}
+
+model Offering {
+  id          Int      @id @default(autoincrement())
+  class_id    Int      @map("class_id")
+  teacher_id  Int      @map("teacher_id")
+  term        String
+  section     String
+
+  class       Class    @relation(fields: [class_id], references: [id], onDelete: Cascade)
+  teacher     User     @relation("TeacherOfferings", fields: [teacher_id], references: [id], onDelete: Cascade)
+  projects    Project[]
+
+  @@unique([class_id, term, section])
+  @@index([class_id])
+  @@index([teacher_id])
+  @@map("offerings")
+}
+
+model Project {
+  id          Int      @id @default(autoincrement())
+  offering_id Int      @map("offering_id")
+  title       String
+  description String?
+
+  offering    Offering @relation(fields: [offering_id], references: [id], onDelete: Cascade)
+  assignments Assignment[]
+
+  @@index([offering_id])
+  @@map("projects")
+}
+
+model Assignment {
+  student_id  Int  @map("student_id")
+  project_id  Int  @map("project_id")
+
+  student     User    @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  project     Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@id([student_id, project_id])
+  @@map("assignments")
+}

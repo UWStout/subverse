@@ -1,54 +1,43 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const ROOT_DIR = path.resolve(__dirname, '..');
+import Database from 'better-sqlite3'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+import { PrismaClient } from './prisma/client.js'
 
-const DB_PATH = process.env.DB_PATH || path.join(ROOT_DIR, 'data', 'accountant.db');
-
-// Ensure the data directory exists
-const dataDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+// Build absolute paths to the data dir and database file
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const dbDirectory = path.resolve(__dirname, '../data')
+const dbPath = path.join(dbDirectory, 'accountant.db')
+if (!fs.existsSync(dbDirectory)) {
+  fs.mkdirSync(dbDirectory, { recursive: true })
 }
 
-let db;
+// Setup prisma-sqlite adapter
+console.log(`Opening database file ${dbPath}`)
+const sqlite = new Database(dbPath)
+const adapter = new PrismaBetterSqlite3({ url: sqlite.name })
+
+// Will hold prisma client reference after initialization
+let prisma
 
 /**
- * Initialize the SQLite database and create tables if they don't exist.
+ * Initialize the Prisma client and run migrations if needed.
  */
-export function initDatabase() {
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS accounts (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      username   TEXT    UNIQUE NOT NULL,
-      email      TEXT    UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      is_verified INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username);
-    CREATE INDEX IF NOT EXISTS idx_accounts_email    ON accounts(email);
-  `);
-
-  console.log(`Database initialized at ${DB_PATH}`);
-  return db;
+export function initDatabase () {
+  prisma = new PrismaClient({ adapter })
+  console.log(`Database loaded at ${dbPath}`)
+  return prisma
 }
 
 /**
- * Get the database instance (must call initDatabase() first).
+ * Get the Prisma client instance (must call initDatabase() first).
  */
-export function getDatabase() {
-  if (!db) {
-    throw new Error('Database not initialized. Call initDatabase() first.');
+export function getDatabase () {
+  if (!prisma) {
+    throw new Error('Database not initialized. Call initDatabase() first.')
   }
-  return db;
+  return prisma
 }

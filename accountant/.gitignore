@@ -2,6 +2,7 @@ node_modules/
 public/
 data/
 dist/
+server/prisma/
 *.db
 *.db-shm
 *.db-wal
