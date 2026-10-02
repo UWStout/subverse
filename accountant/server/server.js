@@ -1,29 +1,31 @@
-import express from 'express'
+import 'dotenv/config'
+
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { initDatabase } from './db.js'
+
+import express from 'express'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, '..')
 
-// Initialize SQLite database
+// Initialize SQLite database before any routes are imported
 initDatabase()
 
+// Import route modules (they depend on the initialized database)
+import userRouter from './routes/user.js'
+import classRouter from './routes/class.js'
+import projectRouter from './routes/project.js'
+
+// Setup the express app
 const app = express()
 const port = process.env.PORT || 3000
 
-// Install the JSON body parser middleware
-app.use(express.json())
-
 // --- API Routes ---
-
-// Express 5 cleanly catches errors thrown inside async functions natively!
-app.get('/api/data', async (req, res) => {
-  // Simulating an asynchronous database call
-  const data = { status: 'success', version: 'Express 5.x' }
-  res.json(data)
-})
+app.use('/user/', userRouter)
+app.use('/class/', classRouter)
+app.use('/project/', projectRouter)
 
 // --- Static File Server ---
 // Serve static files from the public directory (compiled frontend + static assets)

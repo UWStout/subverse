@@ -1,4 +1,5 @@
 import neostandard from 'neostandard'
+import vitestGlobals from 'eslint-plugin-vitest-globals'
 
 export default [
   ...neostandard({
@@ -6,6 +7,7 @@ export default [
     noStyle: false,
     ignores: ['node_modules/**', 'public/**']
   }),
+  ...vitestGlobals.configs['flat/recommended'],
   {
     rules: {
       // Built-in base rules (converted to warnings)

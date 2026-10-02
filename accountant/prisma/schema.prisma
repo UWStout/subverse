@@ -41,14 +41,14 @@ enum UserType {
 
 model Class {
   id            Int      @id @default(autoincrement())
-  subject_code  String   @map("subject_code")
+  subject       String   @map("subject")
   number        String
   title         String
 
   offerings     Offering[]
 
-  @@unique([subject_code, number])
-  @@index([subject_code])
+  @@unique([subject, number])
+  @@index([subject])
   @@map("classes")
 }
 

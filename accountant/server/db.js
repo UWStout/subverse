@@ -1,24 +1,23 @@
+import 'dotenv/config'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 
-import Database from 'better-sqlite3'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from './prisma/client.js'
 
 // Build absolute paths to the data dir and database file
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const dbDirectory = path.resolve(__dirname, '../data')
-const dbPath = path.join(dbDirectory, 'accountant.db')
+const dbDirectory = path.resolve(__dirname, '..', process.env.DATABASE_FOLDER ?? './data')
+const dbPath = path.join(dbDirectory, process.env.DATABASE_FILE ?? 'accountant.db')
 if (!fs.existsSync(dbDirectory)) {
   fs.mkdirSync(dbDirectory, { recursive: true })
 }
 
-// Setup prisma-sqlite adapter
+// Setup prisma-sqlite adapter (it manages its own BetterSQLite3 connection)
 console.log(`Opening database file ${dbPath}`)
-const sqlite = new Database(dbPath)
-const adapter = new PrismaBetterSqlite3({ url: sqlite.name })
+const adapter = new PrismaBetterSqlite3({ url: 'file:' + dbPath })
 
 // Will hold prisma client reference after initialization
 let prisma
