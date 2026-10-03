@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
-import { mockPrisma, TEST_USER, TEST_CLASS, TEST_OFFERING, TEST_PROJECT } from './setup.js'
+import { mockPrisma, TEST_CLASS, TEST_OFFERING, TEST_PROJECT } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -8,7 +8,7 @@ import path from 'path'
 // ---------------------------------------------------------------------------
 async function getProjectRouter () {
   vi.resetModules()
-  const routePath = path.resolve(__dirname, '..', 'server', 'routes', 'project.js')
+  const routePath = path.resolve(__dirname, '..', 'routes', 'project.js')
   const mod = await import(routePath)
   return mod.default
 }
@@ -38,54 +38,57 @@ describe('Project API Routes', () => {
     it('returns projects filtered by class (subject-number) when term is wildcard', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
+      mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
       const res = await request(app).get('/project/CS-101/*')
       expect(res.status).toBe(200)
-      expect(Array.isArray(res.body)).toBe(true)
-      expect(res.body.length).toBeLessThanOrEqual(50)
+      expect(Array.isArray(res.body.data)).toBe(true)
+      expect(res.body.total).toBe(1)
     })
 
     it('returns projects filtered by term when class is wildcard', async () => {
-      mockPrisma.class.findUnique.mockResolvedValue(null) // wildcard, no class lookup needed
       mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
+      mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
       const res = await request(app).get('/project/*/FALL2025')
       expect(res.status).toBe(200)
-      expect(Array.isArray(res.body)).toBe(true)
+      expect(Array.isArray(res.body.data)).toBe(true)
+      expect(res.body.total).toBe(1)
     })
 
     it('returns projects filtered by both class and term', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
+      mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 2 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT, { ...TEST_PROJECT, id: 2 }])
 
       const res = await request(app).get('/project/CS-101/FALL2025')
       expect(res.status).toBe(200)
-      expect(Array.isArray(res.body)).toBe(true)
-      expect(res.body).toHaveLength(2)
+      expect(Array.isArray(res.body.data)).toBe(true)
+      expect(res.body.data).toHaveLength(2)
     })
 
-    it('returns empty array when no projects match the filters', async () => {
+    it('returns empty paginated response when no projects match the filters', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockResolvedValue([])
-      mockPrisma.project.findMany.mockResolvedValue([])
 
       const res = await request(app).get('/project/CS-101/FALL2025')
       expect(res.status).toBe(200)
-      expect(res.body).toEqual([])
+      expect(res.body.data).toEqual([])
+      expect(res.body.total).toBe(0)
     })
 
-    it('limits results to maximum of 50 projects', async () => {
+    it('caps limit at maxLimit of 100', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
-      const manyProjects = Array.from({ length: 60 }, (_, i) => ({ ...TEST_PROJECT, id: i + 1 }))
-      mockPrisma.project.findMany.mockResolvedValue(manyProjects)
+      mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 120 } })
+      mockPrisma.project.findMany.mockResolvedValue(Array.from({ length: 100 }, (_, i) => ({ ...TEST_PROJECT, id: i + 1 })))
 
-      const res = await request(app).get('/project/CS-101/FALL2025')
+      const res = await request(app).get('/project/CS-101/FALL2025?limit=200')
       expect(res.status).toBe(200)
-      expect(res.body.length).toBeLessThanOrEqual(50)
+      expect(res.body.limit).toBe(100) // capped from 200 to maxLimit
     })
 
     it('returns 400 for invalid class code format', async () => {
@@ -199,12 +202,65 @@ describe('Project API Routes', () => {
       expect(res.status).toBe(400)
     })
 
+    it('returns 400 when slug is missing', async () => {
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project' })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when slug contains spaces', async () => {
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'new project' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/invalid slug/i)
+    })
+
+    it('returns 400 when slug contains non-latin characters', async () => {
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'nuevo-proyectó' })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when slug contains special characters', async () => {
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'new/project!' })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when slug contains uppercase letters', async () => {
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'New-Project' })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when slug has leading or trailing hyphens', async () => {
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: '-new-project-' })
+      expect(res.status).toBe(400)
+    })
+
+    it('does not create a project when the slug is invalid', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'bad slug' })
+      expect(res.status).toBe(400)
+      expect(mockPrisma.project.create).not.toHaveBeenCalled()
+    })
+
     it('returns 404 when the offering does not exist', async () => {
       mockPrisma.offering.findUnique.mockResolvedValue(null)
 
       const res = await request(app)
         .post('/project/create')
-        .send({ offering_id: 999, title: 'New Project' })
+        .send({ offering_id: 999, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(404)
       expect(res.body.error).toMatch(/offering/i)
     })
@@ -215,10 +271,34 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
-        .send({ offering_id: 1, title: 'New Project' })
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(201)
       expect(res.body.id).toBe(1)
       expect(res.body.title).toBe('New Project')
+    })
+
+    it('creates a project with git_url', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+      const projectWithGit = { ...TEST_PROJECT, git_url: 'https://github.com/example/my-repo.git' }
+      mockPrisma.project.create.mockResolvedValue(projectWithGit)
+
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', git_url: 'https://github.com/example/my-repo.git' })
+      expect(res.status).toBe(201)
+      expect(res.body.git_url).toBe('https://github.com/example/my-repo.git')
+    })
+
+    it('creates a project with subversion_url', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+      const projectWithSvn = { ...TEST_PROJECT, subversion_url: 'https://svn.example.com/repos/my-repo' }
+      mockPrisma.project.create.mockResolvedValue(projectWithSvn)
+
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', subversion_url: 'https://svn.example.com/repos/my-repo' })
+      expect(res.status).toBe(201)
+      expect(res.body.subversion_url).toBe('https://svn.example.com/repos/my-repo')
     })
 
     it('creates a project with description', async () => {
@@ -228,7 +308,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
-        .send({ offering_id: 1, title: 'New Project', description: 'Detailed description here' })
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', description: 'Detailed description here' })
       expect(res.status).toBe(201)
       expect(res.body.description).toBe('Detailed description here')
     })
@@ -239,7 +319,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
-        .send({ offering_id: 1, title: 'Minimal Project' })
+        .send({ offering_id: 1, title: 'Minimal Project', slug: 'minimal-project' })
       expect(res.status).toBe(201)
     })
 
@@ -248,7 +328,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
-        .send({ offering_id: 1, title: 'New Project' })
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(500)
       expect(res.body.error).toMatch(/fail/i)
     })
@@ -259,7 +339,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
-        .send({ offering_id: 1, title: 'New Project' })
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(500)
       expect(res.body.error).toMatch(/fail/i)
     })
@@ -315,6 +395,82 @@ describe('Project API Routes', () => {
         .send({ description: 'New description' })
       expect(res.status).toBe(200)
       expect(res.body.description).toBe('New description')
+    })
+
+    it('updates slug successfully', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, slug: 'renamed-project' })
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ slug: 'renamed-project' })
+      expect(res.status).toBe(200)
+      expect(res.body.slug).toBe('renamed-project')
+    })
+
+    it('returns 400 when updating slug with spaces', async () => {
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ slug: 'renamed project' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/invalid slug/i)
+    })
+
+    it('returns 400 when updating slug with non-latin characters', async () => {
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ slug: 'проект' })
+      expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when updating slug with special characters', async () => {
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ slug: 'a_b/c' })
+      expect(res.status).toBe(400)
+    })
+
+    it('does not update the project when the slug is invalid', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ slug: 'bad slug' })
+      expect(res.status).toBe(400)
+      expect(mockPrisma.project.update).not.toHaveBeenCalled()
+    })
+
+    it('updates git_url successfully', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, git_url: 'https://gitlab.com/example/new-repo.git' })
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ git_url: 'https://gitlab.com/example/new-repo.git' })
+      expect(res.status).toBe(200)
+      expect(res.body.git_url).toBe('https://gitlab.com/example/new-repo.git')
+    })
+
+    it('updates subversion_url successfully', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, subversion_url: 'https://svn.example.com/repos/new-repo' })
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ subversion_url: 'https://svn.example.com/repos/new-repo' })
+      expect(res.status).toBe(200)
+      expect(res.body.subversion_url).toBe('https://svn.example.com/repos/new-repo')
+    })
+
+    it('clears git_url when set to empty string', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, git_url: null })
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ git_url: '' })
+      expect(res.status).toBe(200)
+      expect(res.body.git_url).toBeNull()
     })
 
     it('updates offering_id successfully after validating the new offering exists', async () => {

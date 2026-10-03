@@ -14,8 +14,10 @@ const ROOT_DIR = path.resolve(__dirname, '..')
 initDatabase()
 
 // Import route modules (they depend on the initialized database)
+import authRouter from './routes/auth.js'
 import userRouter from './routes/user.js'
 import classRouter from './routes/class.js'
+import offeringRouter from './routes/offering.js'
 import projectRouter from './routes/project.js'
 
 // Setup the express app
@@ -23,8 +25,10 @@ const app = express()
 const port = process.env.PORT || 3000
 
 // --- API Routes ---
+app.use('/auth/', authRouter)
 app.use('/user/', userRouter)
 app.use('/class/', classRouter)
+app.use('/offering/', offeringRouter)
 app.use('/project/', projectRouter)
 
 // --- Static File Server ---

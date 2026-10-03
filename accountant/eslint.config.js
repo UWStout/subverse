@@ -7,13 +7,20 @@ export default [
     noStyle: false,
     ignores: ['node_modules/**', 'public/**']
   }),
-  ...vitestGlobals.configs['flat/recommended'],
+  {
+    // Vitest globals (describe, it, expect, beforeEach, ...) for test files.
+    // Note: the plugin exports a single config object (not an array), so it is
+    // spread into this entry rather than directly into the config array.
+    files: ['**/*.test.{js,jsx}', '**/*.spec.{js,jsx}', 'server/test/**/*.{js,jsx}', 'client/test/**/*.{js,jsx}'],
+    ...vitestGlobals.configs['flat/recommended']
+  },
   {
     rules: {
       // Built-in base rules (converted to warnings)
       'one-var': 'warn',
       'no-cond-assign': 'warn',
-      'dot-location': 'warn',
+      // dot-location intentionally disabled (not a desired style)
+      'dot-location': 'off',
       'accessor-pairs': 'warn',
       'no-array-constructor': 'warn',
       'no-fallthrough': 'warn',
@@ -29,6 +36,7 @@ export default [
       '@stylistic/comma-dangle': ['warn', 'never'],
       '@stylistic/comma-spacing': 'warn',
       '@stylistic/comma-style': 'warn',
+      '@stylistic/dot-location': 'off',
       '@stylistic/eol-last': 'warn',
       '@stylistic/func-call-spacing': 'warn',
       '@stylistic/indent': ['warn', 2],

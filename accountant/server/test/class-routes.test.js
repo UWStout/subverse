@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
-import { mockPrisma, TEST_USER, TEST_CLASS } from './setup.js'
+import { mockPrisma, TEST_CLASS } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -8,7 +8,7 @@ import path from 'path'
 // ---------------------------------------------------------------------------
 async function getClassRouter () {
   vi.resetModules()
-  const routePath = path.resolve(__dirname, '..', 'server', 'routes', 'class.js')
+  const routePath = path.resolve(__dirname, '..', 'routes', 'class.js')
   const mod = await import(routePath)
   return mod.default
 }
@@ -29,12 +29,8 @@ describe('Class API Routes', () => {
 
   // ---- GET /list/:term/:teacher ----
   describe('GET /class/list/:term/:teacher', () => {
-    it('returns classes with _count.offerings when no filters (*/*)', async () => {
-      // NOTE: summarizeClass() reads cls.offerings?.length, but Prisma returns
-      // _count: { offerings: N }.  The current code spreads _count into the
-      // response and sets offering_count to 0 (since offerings is undefined).
-      // This test documents actual behavior; fix server/routes/class.js to use
-      // _count.offerings instead of offerings.length in summarizeClass().
+    it('returns classes with offering_count when no filters (*/*)', async () => {
+      mockPrisma.class.aggregate.mockResolvedValue({ _count: { _all: 2 } })
       mockPrisma.class.findMany.mockResolvedValue([
         { id: 1, subject: 'CS', number: '101', title: 'Intro CS', _count: { offerings: 3 } },
         { id: 2, subject: 'MATH', number: '201', title: 'Calculus I', _count: { offerings: 1 } }
@@ -42,11 +38,15 @@ describe('Class API Routes', () => {
 
       const res = await request(app).get('/class/list/*/*')
       expect(res.status).toBe(200)
-      expect(Array.isArray(res.body)).toBe(true)
-      expect(res.body).toHaveLength(2)
-      // _count is spread into the response by summarizeClass's rest-spread
-      expect(res.body[0]._count.offerings).toBe(3)
-      expect(res.body[0]).not.toHaveProperty('offerings')
+      expect(Array.isArray(res.body.data)).toBe(true)
+      expect(res.body.data).toHaveLength(2)
+      // summarizeClass extracts _count.offerings into offering_count
+      expect(res.body.data[0].offering_count).toBe(3)
+      expect(res.body.data[1].offering_count).toBe(1)
+      expect(res.body.data[0]).not.toHaveProperty('_count')
+      expect(res.body.total).toBe(2)
+      expect(res.body.page).toBe(1)
+      expect(res.body.limit).toBe(25)
     })
 
     it('filters by term when provided', async () => {
@@ -100,10 +100,11 @@ describe('Class API Routes', () => {
         { id: 2, class: cls },
         { id: 3, class: cls }
       ])
+      mockPrisma.class.findMany.mockResolvedValue([{ id: 1, subject: 'CS', number: '101', title: 'Intro CS', _count: { offerings: 0 } }])
 
       const res = await request(app).get('/class/list/FALL2025/*')
       expect(res.status).toBe(200)
-      expect(res.body).toHaveLength(1)
+      expect(res.body.data).toHaveLength(1)
     })
 
     it('returns 500 on database error', async () => {
@@ -312,6 +313,63 @@ describe('Class API Routes', () => {
         .send({ title: 'x' })
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to update class' })
+    })
+  })
+
+  // ---- DELETE /:id ----
+  describe('DELETE /class/:id', () => {
+    it('returns 400 for non-numeric ID', async () => {
+      const res = await request(app).delete('/class/abc')
+      expect(res.status).toBe(400)
+      expect(res.body).toEqual({ error: 'Invalid class ID' })
+    })
+
+    it('returns 404 when class does not exist', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(null)
+
+      const res = await request(app).delete('/class/999')
+      expect(res.status).toBe(404)
+      expect(res.body).toEqual({ error: 'Class not found' })
+    })
+
+    it('deletes a class successfully', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+      mockPrisma.offering.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.class.delete.mockResolvedValue(TEST_CLASS)
+
+      const res = await request(app).delete('/class/1')
+      expect(res.status).toBe(200)
+      expect(res.body.message).toMatch(/delet/i)
+    })
+
+    it('cascades deletion of associated offerings', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+      mockPrisma.offering.deleteMany.mockResolvedValue({ count: 2 })
+      mockPrisma.class.delete.mockResolvedValue(TEST_CLASS)
+
+      const res = await request(app).delete('/class/1')
+      expect(res.status).toBe(200)
+      expect(mockPrisma.offering.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { class_id: 1 } })
+      )
+    })
+
+    it('returns 500 on database error during lookup', async () => {
+      mockPrisma.class.findUnique.mockRejectedValue(new Error('DB down'))
+
+      const res = await request(app).delete('/class/1')
+      expect(res.status).toBe(500)
+      expect(res.body).toEqual({ error: 'Failed to delete class' })
+    })
+
+    it('returns 500 on database error during deletion', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+      mockPrisma.offering.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.class.delete.mockRejectedValue(new Error('DB down'))
+
+      const res = await request(app).delete('/class/1')
+      expect(res.status).toBe(500)
+      expect(res.body).toEqual({ error: 'Failed to delete class' })
     })
   })
 })

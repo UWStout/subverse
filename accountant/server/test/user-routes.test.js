@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
-import { mockPrisma, TEST_USER, TEST_CLASS } from './setup.js'
+import { mockPrisma, TEST_USER } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -8,7 +8,7 @@ import path from 'path'
 // ---------------------------------------------------------------------------
 async function getUserRouter () {
   vi.resetModules()
-  const routePath = path.resolve(__dirname, '..', 'server', 'routes', 'user.js')
+  const routePath = path.resolve(__dirname, '..', 'routes', 'user.js')
   const mod = await import(routePath)
   return mod.default
 }
@@ -193,6 +193,30 @@ describe('User API Routes', () => {
       expect(res.body.user.type).toBe('TEACHER')
     })
 
+    it('creates a user with first_name and last_name', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null)
+      mockPrisma.user.create.mockResolvedValue({ ...TEST_USER, first_name: 'Alice', last_name: 'Smith' })
+
+      const res = await request(app)
+        .post('/user/create')
+        .send({ username: 'alice', email: 'alice@example.com', password: 'secret', first_name: 'Alice', last_name: 'Smith' })
+      expect(res.status).toBe(201)
+      expect(res.body.user.first_name).toBe('Alice')
+      expect(res.body.user.last_name).toBe('Smith')
+    })
+
+    it('creates a user with null first_name and last_name when omitted', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null)
+      mockPrisma.user.create.mockResolvedValue({ ...TEST_USER, first_name: null, last_name: null })
+
+      const res = await request(app)
+        .post('/user/create')
+        .send({ username: 'noname', email: 'noname@example.com', password: 'secret' })
+      expect(res.status).toBe(201)
+      expect(res.body.user.first_name).toBeNull()
+      expect(res.body.user.last_name).toBeNull()
+    })
+
     it('ignores invalid user type and defaults to STUDENT', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null)
       mockPrisma.user.create.mockResolvedValue(TEST_USER)
@@ -310,7 +334,32 @@ describe('User API Routes', () => {
         .post('/user/update/1')
         .send({ password: 'newpass' })
       expect(res.status).toBe(200)
-      expect(mockPrisma.user.update).toHaveBeenCalled()
+      const updateArgs = mockPrisma.user.update.mock.calls[0][0]
+      expect(updateArgs.data.password_hash).toBe('$2a$10$hashedpassword') // mocked bcrypt hash
+    })
+
+    it('keeps current password when the password field is omitted', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(TEST_USER)
+      mockPrisma.user.update.mockResolvedValue({ ...TEST_USER, first_name: 'Jane' })
+
+      const res = await request(app)
+        .post('/user/update/1')
+        .send({ first_name: 'Jane' })
+      expect(res.status).toBe(200)
+      const updateArgs = mockPrisma.user.update.mock.calls[0][0]
+      expect(updateArgs.data).not.toHaveProperty('password_hash')
+    })
+
+    it('keeps current password when the password field is an empty string', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(TEST_USER)
+      mockPrisma.user.update.mockResolvedValue({ ...TEST_USER, first_name: 'Jane' })
+
+      const res = await request(app)
+        .post('/user/update/1')
+        .send({ password: '', first_name: 'Jane' })
+      expect(res.status).toBe(200)
+      const updateArgs = mockPrisma.user.update.mock.calls[0][0]
+      expect(updateArgs.data).not.toHaveProperty('password_hash')
     })
 
     it('updates user type to ADMIN', async () => {
@@ -322,6 +371,30 @@ describe('User API Routes', () => {
         .send({ type: 'ADMIN' })
       expect(res.status).toBe(200)
       expect(res.body.user.type).toBe('ADMIN')
+    })
+
+    it('updates first_name and last_name successfully', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(TEST_USER)
+      mockPrisma.user.update.mockResolvedValue({ ...TEST_USER, first_name: 'Jane', last_name: 'Doe' })
+
+      const res = await request(app)
+        .post('/user/update/1')
+        .send({ first_name: 'Jane', last_name: 'Doe' })
+      expect(res.status).toBe(200)
+      expect(res.body.user.first_name).toBe('Jane')
+      expect(res.body.user.last_name).toBe('Doe')
+    })
+
+    it('clears first_name and last_name when set to empty string', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(TEST_USER)
+      mockPrisma.user.update.mockResolvedValue({ ...TEST_USER, first_name: null, last_name: null })
+
+      const res = await request(app)
+        .post('/user/update/1')
+        .send({ first_name: '', last_name: '' })
+      expect(res.status).toBe(200)
+      expect(res.body.user.first_name).toBeNull()
+      expect(res.body.user.last_name).toBeNull()
     })
 
     it('returns 400 for invalid user type', async () => {
@@ -352,6 +425,63 @@ describe('User API Routes', () => {
         .send({ username: 'x' })
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to update user' })
+    })
+  })
+
+  // ---- DELETE /:id ----
+  describe('DELETE /user/:id', () => {
+    it('returns 400 for non-numeric ID', async () => {
+      const res = await request(app).delete('/user/abc')
+      expect(res.status).toBe(400)
+      expect(res.body).toEqual({ error: 'Invalid user ID' })
+    })
+
+    it('returns 404 when user does not exist', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null)
+
+      const res = await request(app).delete('/user/999')
+      expect(res.status).toBe(404)
+      expect(res.body).toEqual({ error: 'User not found' })
+    })
+
+    it('deletes a user successfully', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(TEST_USER)
+      mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.user.delete.mockResolvedValue(TEST_USER)
+
+      const res = await request(app).delete('/user/1')
+      expect(res.status).toBe(200)
+      expect(res.body.message).toMatch(/delet/i)
+    })
+
+    it('cascades deletion of associated assignments', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(TEST_USER)
+      mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 3 })
+      mockPrisma.user.delete.mockResolvedValue(TEST_USER)
+
+      const res = await request(app).delete('/user/1')
+      expect(res.status).toBe(200)
+      expect(mockPrisma.assignment.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { student_id: 1 } })
+      )
+    })
+
+    it('returns 500 on database error during lookup', async () => {
+      mockPrisma.user.findUnique.mockRejectedValue(new Error('DB down'))
+
+      const res = await request(app).delete('/user/1')
+      expect(res.status).toBe(500)
+      expect(res.body).toEqual({ error: 'Failed to delete user' })
+    })
+
+    it('returns 500 on database error during deletion', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(TEST_USER)
+      mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 0 })
+      mockPrisma.user.delete.mockRejectedValue(new Error('DB down'))
+
+      const res = await request(app).delete('/user/1')
+      expect(res.status).toBe(500)
+      expect(res.body).toEqual({ error: 'Failed to delete user' })
     })
   })
 })

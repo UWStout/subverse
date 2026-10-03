@@ -1,3 +1,4 @@
+/* eslint-disable camelcase */
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
 
@@ -9,6 +10,20 @@ function getDb () {
 }
 
 const projectRouter = new Router()
+
+/**
+ * Parse ?page=N&limit=N query params into pagination values.
+ * Defaults: page=1, limit=25.  Caps limit at maxLimit.
+ * Returns { skip, take, page }
+ */
+function parsePagination (query, maxLimit = 100) {
+  let page = parseInt(query.page, 10) || 1
+  let limit = parseInt(query.limit, 10) || 25
+  if (page < 1) page = 1
+  if (limit < 1) limit = 1
+  if (limit > maxLimit) limit = maxLimit
+  return { skip: (page - 1) * limit, take: limit, page }
+}
 
 // Install Json body parser
 projectRouter.use(json())
@@ -27,16 +42,34 @@ function parseClassCode (code) {
   return { subject, number }
 }
 
+/**
+ * Proper slug format: lowercase latin letters and digits only, with single
+ * hyphens between segments (e.g. "final-project").
+ * Rejects spaces, uppercase, non-latin characters, and any special character
+ * that is unsafe in URLs or file paths.
+ */
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const SLUG_ERROR = 'Invalid slug format, expected lowercase letters and numbers separated by single hyphens (e.g. final-project)'
+
+function isValidSlug (slug) {
+  return typeof slug === 'string' && SLUG_PATTERN.test(slug)
+}
+
 // --- Routes (specific paths first, parameterized last) ---
 
 // Create Project post route
 projectRouter.post('/create', async (req, res) => {
   try {
-    const { offering_id, title, description } = req.body
+    const { offering_id, title, slug, subversion_url, git_url, description } = req.body
 
     // Validate required fields
-    if (!offering_id || !title) {
-      return res.status(400).json({ error: 'Missing required fields: offering_id and title are required' })
+    if (!offering_id || !title || !slug) {
+      return res.status(400).json({ error: 'Missing required fields: offering_id, title, and slug are required' })
+    }
+
+    // Validate slug format (must be URL / file path safe)
+    if (!isValidSlug(slug)) {
+      return res.status(400).json({ error: SLUG_ERROR })
     }
 
     // Verify the offering exists
@@ -49,6 +82,9 @@ projectRouter.post('/create', async (req, res) => {
       data: {
         offering_id: parseInt(offering_id, 10),
         title,
+        slug,
+        subversion_url: subversion_url ?? null,
+        git_url: git_url ?? null,
         description: description ?? null
       }
     })
@@ -68,11 +104,16 @@ projectRouter.post('/update/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid project ID' })
     }
 
-    const { offering_id, title, description } = req.body
+    const { offering_id, title, slug, subversion_url, git_url, description } = req.body
 
     // Validate that at least one update field is provided
-    if (title === undefined && description === undefined && offering_id === undefined) {
+    if (title === undefined && slug === undefined && subversion_url === undefined && git_url === undefined && description === undefined && offering_id === undefined) {
       return res.status(400).json({ error: 'No update fields provided' })
+    }
+
+    // Validate slug format if it is being changed (must be URL / file path safe)
+    if (slug !== undefined && !isValidSlug(slug)) {
+      return res.status(400).json({ error: SLUG_ERROR })
     }
 
     // Check project exists
@@ -93,6 +134,9 @@ projectRouter.post('/update/:id', async (req, res) => {
       where: { id },
       data: {
         ...(title !== undefined && { title }),
+        ...(slug !== undefined && { slug }),
+        ...(subversion_url !== undefined && { subversion_url: subversion_url ?? null }),
+        ...(git_url !== undefined && { git_url: git_url ?? null }),
         ...(description !== undefined && { description }),
         ...(offering_id !== undefined && { offering_id: parseInt(offering_id, 10) })
       }
@@ -115,7 +159,7 @@ projectRouter.get('/:class/:term', async (req, res) => {
       return res.status(400).json({ error: 'At least one filter (class or term) is required' })
     }
 
-    const limit = 50
+    const { skip, take, page } = parsePagination(req.query)
 
     // Parse class code if provided (not wildcard)
     let classId = null
@@ -144,19 +188,27 @@ projectRouter.get('/:class/:term', async (req, res) => {
     // Find matching offerings
     const offerings = await getDb().offering.findMany({ where: offeringWhere })
     if (offerings.length === 0) {
-      return res.json([])
+      return res.json({ data: [], total: 0, page, limit: take, totalPages: 0 })
     }
 
     const offeringIds = offerings.map(o => o.id)
+    const where = { offering_id: { in: offeringIds } }
 
-    // Get projects for those offerings, limited to 50
-    const projects = (await getDb().project.findMany({
-      where: { offering_id: { in: offeringIds } },
-      take: limit,
-      orderBy: { id: 'asc' }
-    })).slice(0, limit)
+    // Fetch projects and count in parallel
+    const [projects, agg] = await Promise.all([
+      getDb().project.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { id: 'asc' }
+      }),
+      getDb().project.aggregate({ where, _count: { _all: true } })
+    ])
+    const total = agg._count._all
 
-    res.json(projects)
+    const totalPages = Math.ceil(total / take) || 0
+
+    res.json({ data: projects, total, page, limit: take, totalPages })
   } catch (err) {
     console.error('Error listing projects:', err)
     res.status(500).json({ error: 'Failed to list projects' })

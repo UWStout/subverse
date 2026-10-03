@@ -3,6 +3,7 @@ public/
 data/
 dist/
 server/prisma/
+coverage/
 *.db
 *.db-shm
 *.db-wal

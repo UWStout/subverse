@@ -10,6 +10,7 @@ export const mockPrisma = {
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
+    aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 } }),
     create: vi.fn().mockResolvedValue({}),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({})
@@ -18,6 +19,7 @@ export const mockPrisma = {
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
+    aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 } }),
     create: vi.fn().mockResolvedValue({}),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({})
@@ -26,14 +28,17 @@ export const mockPrisma = {
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
+    aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 } }),
     create: vi.fn().mockResolvedValue({}),
     update: vi.fn().mockResolvedValue({}),
-    delete: vi.fn().mockResolvedValue({})
+    delete: vi.fn().mockResolvedValue({}),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 })
   },
   project: {
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
+    aggregate: vi.fn().mockResolvedValue({ _count: { _all: 0 } }),
     create: vi.fn().mockResolvedValue({}),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({})
@@ -57,6 +62,7 @@ beforeEach(() => {
     model.findFirst.mockResolvedValue(null)
     model.findUnique.mockResolvedValue(null)
     model.findMany.mockResolvedValue([])
+    if (model.aggregate) model.aggregate.mockResolvedValue({ _count: { _all: 0 } })
     model.create.mockResolvedValue({})
     model.update.mockResolvedValue({})
     model.delete.mockResolvedValue({})
@@ -66,8 +72,9 @@ beforeEach(() => {
     resetModel(key)
   }
 
-  // Reset deleteMany on assignment (only model that has it)
+  // Reset deleteMany on assignment and offering (models that have it)
   mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 0 })
+  mockPrisma.offering.deleteMany.mockResolvedValue({ count: 0 })
 })
 
 // ---------------------------------------------------------------------------
@@ -83,7 +90,7 @@ vi.doMock('bcryptjs', () => ({
 // ---------------------------------------------------------------------------
 // Mock the db module — use absolute path so it matches what server/routes/* resolves
 // ---------------------------------------------------------------------------
-const dbPath = path.resolve(__dirname, '..', 'server', 'db.js')
+const dbPath = path.resolve(__dirname, '..', 'db.js')
 
 vi.doMock(dbPath, () => ({
   getDatabase: () => mockPrisma,
@@ -109,6 +116,8 @@ export function createTestApp (router, prefix = '/') {
 export const TEST_USER = {
   id: 1,
   username: 'testuser',
+  first_name: 'Test',
+  last_name: 'User',
   email: 'test@example.com',
   password_hash: '$2a$10$hashedpassword',
   type: 'STUDENT',
@@ -148,5 +157,8 @@ export const TEST_PROJECT = {
   id: 1,
   offering_id: 1,
   title: 'Final Project',
+  slug: 'final-project',
+  subversion_url: null,
+  git_url: 'https://github.com/example/final-project.git',
   description: 'Complete final assignment for the course'
 }
