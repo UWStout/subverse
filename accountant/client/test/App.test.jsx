@@ -4,6 +4,7 @@ import App from '../src/App'
 import {
   fetchCurrentUser,
   login,
+  fetchBootstrapStatus,
   fetchUsers,
   fetchOfferings,
   fetchOfferingTerms
@@ -14,6 +15,7 @@ vi.mock('../src/services/api', () => ({
   fetchCurrentUser: vi.fn(),
   clearToken: vi.fn(),
   login: vi.fn(),
+  fetchBootstrapStatus: vi.fn(),
   fetchUsers: vi.fn(),
   deleteUser: vi.fn(),
   checkAvailability: vi.fn(),
@@ -42,6 +44,7 @@ describe('App', () => {
     localStorage.clear()
     fetchCurrentUser.mockRejectedValue(new Error('Not logged in'))
     login.mockResolvedValue(undefined)
+    fetchBootstrapStatus.mockResolvedValue(false)
     fetchUsers.mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 })
     fetchOfferings.mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 })
     fetchOfferingTerms.mockResolvedValue([])
@@ -74,13 +77,12 @@ describe('App', () => {
     expect(await screen.findByText('Class Offerings')).toBeInTheDocument()
   })
 
-  it('redirects an admin away from /offerings to the users page (current role config)', async () => {
+  it('shows the offerings page for an admin', async () => {
     fetchCurrentUser.mockResolvedValue(ADMIN)
 
     visit('/offerings')
     render(<App />)
 
-    expect(await screen.findByText('User Accounts')).toBeInTheDocument()
-    expect(screen.queryByText('Class Offerings')).not.toBeInTheDocument()
+    expect(await screen.findByText('Class Offerings')).toBeInTheDocument()
   })
 })

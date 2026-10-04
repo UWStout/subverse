@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
-import { mockPrisma, TEST_USER } from './setup.js'
+import { mockPrisma, TEST_USER, TEST_JWT_SECRET } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -15,13 +15,10 @@ async function getAuthRouter () {
   return mod.default
 }
 
-// Must match the dev fallback in server/routes/auth.js (no JWT_SECRET in tests)
-const DEV_SECRET = 'dev-only-secret-do-not-use-in-production'
-
 function makeToken (overrides = {}) {
   return jwt.sign(
     { sub: TEST_USER.id, username: 'testuser', type: 'STUDENT', ...overrides },
-    DEV_SECRET,
+    TEST_JWT_SECRET,
     { expiresIn: '8h' }
   )
 }
@@ -81,7 +78,7 @@ describe('Auth API Routes', () => {
       expect(res.body.token).toBeTruthy()
 
       // The token must be a JWT carrying the user identity
-      const payload = jwt.verify(res.body.token, DEV_SECRET)
+      const payload = jwt.verify(res.body.token, TEST_JWT_SECRET)
       expect(payload.sub).toBe(TEST_USER.id)
       expect(payload.username).toBe('testuser')
       expect(payload.type).toBe('STUDENT')

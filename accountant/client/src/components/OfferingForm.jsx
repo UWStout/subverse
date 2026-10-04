@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -15,7 +18,11 @@ import {
   TextField,
   Typography
 } from '@mui/material'
-import { createOffering, updateOffering, fetchClasses, fetchTeachers } from '../services/api'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { createOffering, updateOffering, fetchClasses, fetchTeachers, createClass } from '../services/api'
+
+/** Sentinel value for the "create a new class" option in the class select. */
+const NEW_CLASS_VALUE = '__new_class__'
 
 /**
  * Reusable offering form wrapped in a Dialog (mirrors UserForm).
@@ -42,6 +49,11 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
   const [teachers, setTeachers] = useState([])
   const [optionsLoading, setOptionsLoading] = useState(false)
 
+  // Inline new-class fields (only used when "New Class" is selected)
+  const [newClassSubject, setNewClassSubject] = useState('')
+  const [newClassNumber, setNewClassNumber] = useState('')
+  const [newClassTitle, setNewClassTitle] = useState('')
+
   // UI state
   const [errors, setErrors] = useState({})
   const [serverError, setServerError] = useState('')
@@ -64,6 +76,10 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
       setTerm('')
       setSection('')
     }
+    // The inline new-class fields always start empty on open
+    setNewClassSubject('')
+    setNewClassNumber('')
+    setNewClassTitle('')
     setErrors({})
     setServerError('')
 
@@ -92,7 +108,14 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
 
   function validate () {
     const errs = {}
-    if (!classId) errs.classId = 'Class is required'
+    if (!classId) {
+      errs.classId = 'Class is required'
+    } else if (classId === NEW_CLASS_VALUE) {
+      // "New Class" selected - the inline fields must be filled in
+      if (!newClassSubject.trim()) errs.newClassSubject = 'Subject is required'
+      if (!newClassNumber.trim()) errs.newClassNumber = 'Number is required'
+      if (!newClassTitle.trim()) errs.newClassTitle = 'Title is required'
+    }
     if (!teacherId) errs.teacherId = 'Teacher is required'
     if (!term.trim()) errs.term = 'Term is required'
     if (!section.trim()) errs.section = 'Section is required'
@@ -107,14 +130,26 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
     setLoading(true)
     setServerError('')
 
-    const payload = {
-      classId: Number(classId),
-      teacherId: Number(teacherId),
-      term: term.trim(),
-      section: section.trim()
-    }
-
     try {
+      // Resolve the class id  when "New Class" is selected, create the
+      // class first and use the id of the record that comes back.
+      let finalClassId = Number(classId)
+      if (classId === NEW_CLASS_VALUE) {
+        const newClass = await createClass({
+          subject: newClassSubject.trim(),
+          number: newClassNumber.trim(),
+          title: newClassTitle.trim()
+        })
+        finalClassId = newClass.id
+      }
+
+      const payload = {
+        classId: finalClassId,
+        teacherId: Number(teacherId),
+        term: term.trim(),
+        section: section.trim()
+      }
+
       if (isEdit) {
         await updateOffering(offering.id, payload)
       } else {
@@ -157,6 +192,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
                   {`${c.subject} ${c.number} – ${c.title}`}
                 </MenuItem>
               ))}
+              <MenuItem value={NEW_CLASS_VALUE}>New Class</MenuItem>
             </Select>
             {errors.classId && (
               <Typography variant='caption' color='error' sx={{ mt: 0.5, ml: 1 }}>
@@ -164,6 +200,49 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
               </Typography>
             )}
           </FormControl>
+
+          {/* Extra fields for a brand-new class - only visible while
+              "New Class" is the selected option */}
+          {classId === NEW_CLASS_VALUE && (
+            <Accordion variant='outlined' defaultExpanded disableGutters>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography>New Class Details</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pb: 1 }}>
+                  <TextField
+                    label='Subject'
+                    value={newClassSubject}
+                    onChange={e => setNewClassSubject(e.target.value)}
+                    error={!!errors.newClassSubject}
+                    helperText={errors.newClassSubject}
+                    fullWidth
+                    disabled={loading}
+                  />
+
+                  <TextField
+                    label='Number'
+                    value={newClassNumber}
+                    onChange={e => setNewClassNumber(e.target.value)}
+                    error={!!errors.newClassNumber}
+                    helperText={errors.newClassNumber}
+                    fullWidth
+                    disabled={loading}
+                  />
+
+                  <TextField
+                    label='Title'
+                    value={newClassTitle}
+                    onChange={e => setNewClassTitle(e.target.value)}
+                    error={!!errors.newClassTitle}
+                    helperText={errors.newClassTitle}
+                    fullWidth
+                    disabled={loading}
+                  />
+                </Box>
+              </AccordionDetails>
+            </Accordion>
+          )}
 
           <FormControl fullWidth error={!!errors.teacherId}>
             <InputLabel id='offering-teacher-label'>Teacher</InputLabel>

@@ -7,7 +7,7 @@ import Users from '../src/pages/Users'
 import { useAuth } from '../src/context/AuthContext'
 import { fetchUsers, deleteUser, checkAvailability, createUser } from '../src/services/api'
 
-// Mock the auth context — the page only consumes the useAuth hook.
+// Mock the auth context - the page only consumes the useAuth hook.
 vi.mock('../src/context/AuthContext', () => ({
   useAuth: vi.fn()
 }))

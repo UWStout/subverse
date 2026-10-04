@@ -5,7 +5,7 @@ import Header from '../src/components/Header'
 import { ThemeProvider } from '../src/context/ThemeContext'
 import { useAuth } from '../src/context/AuthContext'
 
-// Mock the auth context — the header only consumes the useAuth hook.
+// Mock the auth context - the header only consumes the useAuth hook.
 vi.mock('../src/context/AuthContext', () => ({
   useAuth: vi.fn()
 }))
@@ -55,7 +55,7 @@ describe('Header', () => {
     expect(screen.queryByRole('link', { name: 'Login' })).not.toBeInTheDocument()
   })
 
-  // The Offerings link is role-restricted — see NAV_LINKS in Header.jsx.
+  // The Offerings link is role-restricted - see NAV_LINKS in Header.jsx.
   it('shows the Offerings link for users with an allowed role', () => {
     renderHeader(TEACHER)
 
@@ -68,9 +68,9 @@ describe('Header', () => {
     expect(screen.queryByRole('link', { name: 'Offerings' })).not.toBeInTheDocument()
   })
 
-  it('hides the Offerings link from admins (current NAV_LINKS config)', () => {
+  it('shows the Offerings link for admins (hidden only from students)', () => {
     renderHeader(ADMIN)
 
-    expect(screen.queryByRole('link', { name: 'Offerings' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Offerings' })).toBeInTheDocument()
   })
 })

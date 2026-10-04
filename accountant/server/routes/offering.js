@@ -1,6 +1,7 @@
 /* eslint-disable camelcase */
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
+import { authenticate } from '../middleware/auth.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -13,6 +14,9 @@ const offeringRouter = new Router()
 
 // Install Json body parser
 offeringRouter.use(json())
+
+// All offering routes require a valid session token
+offeringRouter.use(authenticate)
 
 /**
  * Parse ?page=N&limit=N query params into pagination values.
@@ -29,39 +33,46 @@ function parsePagination (query, maxLimit = 100) {
 }
 
 /**
- * Build a Prisma `where` clause from the optional list filters
- * (?term=*, ?section=, ?class_id=, ?teacher_id=).
+ * Build a Prisma `where` clause from the list route's positional filter
+ * params (:term, :class_id, :teacher_id). A value of '*' means "any"
+ * (no filter) for that position.
  */
-function buildWhere (query) {
+function buildWhere (params) {
   const where = {}
-  if (query.term && query.term !== '*') where.term = query.term
-  if (query.section) where.section = query.section
-  if (query.class_id) where.class_id = parseInt(query.class_id, 10)
-  if (query.teacher_id) where.teacher_id = parseInt(query.teacher_id, 10)
+  if (params.term && params.term !== '*') where.term = params.term
+  if (params.class_id && params.class_id !== '*') where.class_id = parseInt(params.class_id, 10)
+  if (params.teacher_id && params.teacher_id !== '*') where.teacher_id = parseInt(params.teacher_id, 10)
   return where
-}
-
-/** Fields included with each offering in list responses. */
-const OFFERING_INCLUDE = {
-  class: { select: { id: true, subject: true, number: true, title: true } },
-  teacher: { select: { id: true, username: true, email: true } }
 }
 
 // --- Routes (specific paths first, parameterized last) ---
 
 // Get list of offerings with server-side pagination.
-// Optional filters: ?term=*, ?section=, ?class_id=N, ?teacher_id=N
-offeringRouter.get('/list', async (req, res) => {
+// Filters are positional URL params; '*' means "any" for that position:
+//   GET /offering/list/:term/:class_id/:teacher_id
+// Only pagination (?page=N&limit=N) is passed as query params.
+offeringRouter.get('/list/:term/:class_id/:teacher_id', async (req, res) => {
   try {
-    const where = buildWhere(req.query)
+    const { class_id, teacher_id } = req.params
+
+    // Non-wildcard ID filters must be numeric
+    if (class_id !== '*' && isNaN(parseInt(class_id, 10))) {
+      return res.status(400).json({ error: 'Invalid class_id, expected a number or *' })
+    }
+    if (teacher_id !== '*' && isNaN(parseInt(teacher_id, 10))) {
+      return res.status(400).json({ error: 'Invalid teacher_id, expected a number or *' })
+    }
+
+    const where = buildWhere(req.params)
     const { skip, take, page } = parsePagination(req.query)
 
+    // Plain rows only - no joins / expansions. Expanded info (class and
+    // teacher details, project IDs) lives on GET /offering/:id.
     const [offerings, agg] = await Promise.all([
       getDb().offering.findMany({
         where,
         skip,
         take,
-        include: OFFERING_INCLUDE,
         orderBy: [{ term: 'asc' }, { section: 'asc' }, { id: 'asc' }]
       }),
       getDb().offering.aggregate({ where, _count: { _all: true } })
@@ -97,16 +108,47 @@ offeringRouter.get('/terms', async (req, res) => {
   }
 })
 
+// Get full details for a specific offering (joined with class and teacher
+// details plus the IDs of all projects belonging to it)
+offeringRouter.get('/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10)
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid offering ID' })
+    }
+
+    const offering = await getDb().offering.findUnique({
+      where: { id },
+      include: {
+        class: { select: { id: true, subject: true, number: true, title: true } },
+        teacher: { select: { id: true, username: true, email: true } },
+        projects: { select: { id: true } }
+      }
+    })
+
+    if (!offering) {
+      return res.status(404).json({ error: 'Offering not found' })
+    }
+
+    // Return the offering with a flat list of its project IDs
+    const { projects, ...rest } = offering
+    res.json({ ...rest, project_ids: projects.map(p => p.id) })
+  } catch (err) {
+    console.error('Error retrieving offering:', err)
+    res.status(500).json({ error: 'Failed to retrieve offering' })
+  }
+})
+
 /**
- * Validate that a class and teacher exist (and the teacher has type TEACHER).
- * Returns the found records or null when either lookup fails.
+ * Validate that a class and instructor exist (instructors may be TEACHER or
+ * ADMIN). Returns the found records or null when either lookup fails.
  */
 async function validateClassAndTeacher (class_id, teacher_id) {
   const [cls, teacher] = await Promise.all([
     getDb().class.findUnique({ where: { id: class_id } }),
     getDb().user.findUnique({ where: { id: teacher_id } })
   ])
-  if (!cls || !teacher || teacher.type !== 'TEACHER') return null
+  if (!cls || !teacher || !['TEACHER', 'ADMIN'].includes(teacher.type)) return null
   return { cls, teacher }
 }
 
@@ -133,7 +175,7 @@ offeringRouter.post('/create', async (req, res) => {
       if (!cls) return res.status(404).json({ error: 'Class not found' })
       const teacher = await getDb().user.findUnique({ where: { id: teacherId } })
       if (!teacher) return res.status(404).json({ error: 'Teacher not found' })
-      return res.status(400).json({ error: 'Selected user is not a teacher' })
+      return res.status(400).json({ error: 'Selected user is not a teacher or admin' })
     }
 
     // Check for duplicate class + term + section combination
@@ -191,7 +233,7 @@ offeringRouter.post('/update/:id', async (req, res) => {
         if (!cls) return res.status(404).json({ error: 'Class not found' })
         const teacher = await getDb().user.findUnique({ where: { id: newTeacherId } })
         if (!teacher) return res.status(404).json({ error: 'Teacher not found' })
-        return res.status(400).json({ error: 'Selected user is not a teacher' })
+        return res.status(400).json({ error: 'Selected user is not a teacher or admin' })
       }
     }
 

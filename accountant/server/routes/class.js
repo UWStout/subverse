@@ -1,5 +1,6 @@
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
+import { authenticate } from '../middleware/auth.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -12,6 +13,9 @@ const classRouter = new Router()
 
 // Install Json body parser
 classRouter.use(json())
+
+// All class routes require a valid session token
+classRouter.use(authenticate)
 
 /**
  * Parse ?page=N&limit=N query params into pagination values.
@@ -41,65 +45,31 @@ function summarizeClass (cls) {
 
 // --- Routes (specific paths first, parameterized last) ---
 
-// Get list of classes (filtered by term and/or teacher_id)
-// - Return only summarized class data with server-side pagination
-classRouter.get('/list/:term/:teacher', async (req, res) => {
+// Get list of classes with server-side pagination.
+// Filters are positional URL params; '*' means "any" for that position:
+//   GET /class/list/:subject/:number
+// Only pagination (?page=N&limit=N) is passed as query params.
+classRouter.get('/list/:subject/:number', async (req, res) => {
   try {
-    const { term, teacher } = req.params
+    const { subject, number } = req.params
 
-    // Build where clause for offerings filter
-    const offeringFilter = {}
-    if (term && term !== '*') offeringFilter.term = term
-    if (teacher && teacher !== '*') offeringFilter.teacher_id = parseInt(teacher, 10)
+    const where = {}
+    if (subject && subject !== '*') where.subject = subject
+    if (number && number !== '*') where.number = number
 
     const { skip, take, page } = parsePagination(req.query)
 
-    // If no filters, just return classes with a count of offerings
-    if (!offeringFilter.term && !offeringFilter.teacher_id) {
-      const [classes, agg] = await Promise.all([
-        getDb().class.findMany({
-          skip,
-          take,
-          include: {
-            _count: { select: { offerings: true } }
-          },
-          orderBy: { id: 'asc' }
-        }),
-        getDb().class.aggregate({ _count: { _all: true } })
-      ])
-      const total = agg._count._all
-
-      return res.json({
-        data: classes.map(summarizeClass),
-        total,
-        page,
-        limit: take,
-        totalPages: Math.ceil(total / take)
-      })
-    }
-
-    // Filter through offerings to find matching class IDs
-    const offerings = await getDb().offering.findMany({
-      where: offeringFilter,
-      select: { class_id: true }
-    })
-
-    const uniqueIds = [...new Set(offerings.map(o => o.class_id))]
-    const total = uniqueIds.length
-
-    // Fetch the page slice of classes
-    const pagedIds = uniqueIds.slice(skip, skip + take)
-
-    let classes = []
-    if (pagedIds.length > 0) {
-      classes = await getDb().class.findMany({
-        where: { id: { in: pagedIds } },
-        include: {
-          _count: { select: { offerings: true } }
-        },
+    const [classes, agg] = await Promise.all([
+      getDb().class.findMany({
+        where,
+        skip,
+        take,
+        include: { _count: { select: { offerings: true } } },
         orderBy: { id: 'asc' }
-      })
-    }
+      }),
+      getDb().class.aggregate({ where, _count: { _all: true } })
+    ])
+    const total = agg._count._all
 
     res.json({
       data: classes.map(summarizeClass),
@@ -148,6 +118,11 @@ classRouter.get('/:id', async (req, res) => {
 // Create Class post route
 classRouter.post('/create', async (req, res) => {
   try {
+    // Students have no access to class management
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot create classes' })
+    }
+
     const { subject, number, title } = req.body
 
     // Validate required fields
@@ -180,6 +155,11 @@ classRouter.post('/create', async (req, res) => {
 // Update Class post route
 classRouter.post('/update/:id', async (req, res) => {
   try {
+    // Students have no access to class management
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot update classes' })
+    }
+
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid class ID' })
@@ -232,6 +212,11 @@ classRouter.post('/update/:id', async (req, res) => {
 // Delete class route
 classRouter.delete('/:id', async (req, res) => {
   try {
+    // Students have no access to class management
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot delete classes' })
+    }
+
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid class ID' })
@@ -243,10 +228,11 @@ classRouter.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Class not found' })
     }
 
-    // Delete associated offerings (cascade on class delete handles this,
-    // but we do it explicitly for clarity and to satisfy the test expectation).
-    // Each offering's projects and their assignments are also cascade-deleted.
-    await getDb().offering.deleteMany({ where: { class_id: id } })
+    // A class with offerings cannot be deleted; delete the offerings first.
+    const offeringCount = await getDb().offering.count({ where: { class_id: id } })
+    if (offeringCount > 0) {
+      return res.status(409).json({ error: 'Cannot delete a class that has offerings. Delete its offerings first.' })
+    }
 
     await getDb().class.delete({ where: { id } })
 

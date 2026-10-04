@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
+import { authenticate, JWT_SECRET, TOKEN_TTL } from '../middleware/auth.js'
+import { verifyBootstrapToken } from '../bootstrap.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -15,39 +17,13 @@ const authRouter = new Router()
 
 authRouter.use(json())
 
-/**
- * Signing secret for session tokens. Set JWT_SECRET in the environment for
- * anything beyond local development.
- */
-export const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-do-not-use-in-production'
-const TOKEN_TTL = '8h'
-
 /** Strip sensitive fields from a user object before returning it. */
 function sanitizeUser (user) {
   const { password_hash, verification_token, reset_token, ...safe } = user
   return safe
 }
 
-/**
- * Express middleware: require a valid `Authorization: Bearer <token>` header.
- * Attaches the decoded token payload to req.user on success; responds 401
- * when the header is missing, malformed, or the token is invalid/expired.
- */
-export function authenticate (req, res, next) {
-  const header = req.headers.authorization || ''
-  const [scheme, token] = header.split(' ')
-  if (scheme !== 'Bearer' || !token) {
-    return res.status(401).json({ error: 'Missing or malformed Authorization header' })
-  }
-  try {
-    req.user = jwt.verify(token, JWT_SECRET)
-    next()
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' })
-  }
-}
-
-// POST /auth/login — exchange credentials for a session token
+// POST /auth/login - exchange credentials for a session token (public)
 authRouter.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body
@@ -58,6 +34,7 @@ authRouter.post('/login', async (req, res) => {
     const user = await getDb().user.findUnique({ where: { username } })
     // Same response for unknown user and wrong password (don't leak which one failed)
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      console.error(`Login failed from ${req.ip}: ${user ? `invalid password for '${username}'` : `unknown user '${username}'`}`)
       return res.status(401).json({ error: 'Invalid username or password' })
     }
 
@@ -74,11 +51,74 @@ authRouter.post('/login', async (req, res) => {
   }
 })
 
-// GET /auth/me — return the user identified by the bearer token
-authRouter.get('/me', authenticate, async (req, res) => {
+// GET /auth/bootstrap/status - public; tells the client whether the initial
+// admin account still needs to be created (users table is empty).
+authRouter.get('/bootstrap/status', async (req, res) => {
+  try {
+    const count = await getDb().user.count()
+    res.json({ bootstrap: count === 0 })
+  } catch (err) {
+    console.error('Error checking bootstrap status:', err)
+    res.status(500).json({ error: 'Failed to check bootstrap status' })
+  }
+})
+
+// POST /auth/bootstrap - public, single-use; create the initial ADMIN account.
+// Requires the one-time signed token printed in the server logs at startup.
+authRouter.post('/bootstrap', async (req, res) => {
+  try {
+    const { token, username, email, password, first_name, last_name } = req.body
+
+    if (!token || !username || !email || !password) {
+      return res.status(400).json({ error: 'Missing required fields: token, username, email, password' })
+    }
+
+    // Bootstrap is single-use: once any account exists it is permanently closed.
+    const count = await getDb().user.count()
+    if (count > 0) {
+      return res.status(410).json({ error: 'Bootstrap already completed - an account already exists' })
+    }
+
+    // Verify the signed one-time token (bad signature, wrong purpose, or expired)
+    try {
+      verifyBootstrapToken(token)
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(400).json({ error: 'Bootstrap token has expired. Restart the server to issue a new one.' })
+      }
+      console.error(`Bootstrap rejected from ${req.ip}: invalid bootstrap token (${err.message})`)
+      return res.status(401).json({ error: 'Invalid bootstrap token' })
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+    const user = await getDb().user.create({
+      data: {
+        username,
+        email,
+        password_hash: passwordHash,
+        type: 'ADMIN',
+        first_name: first_name ?? null,
+        last_name: last_name ?? null
+      }
+    })
+
+    console.log(`Bootstrap complete: initial ADMIN account '${username}' created`)
+    res.status(201).json({ message: 'Initial admin account created', user: sanitizeUser(user) })
+  } catch (err) {
+    console.error('Error creating bootstrap account:', err)
+    res.status(500).json({ error: 'Failed to create initial account' })
+  }
+})
+
+// All remaining auth routes require a valid session token
+authRouter.use(authenticate)
+
+// GET /auth/me - return the user identified by the bearer token
+authRouter.get('/me', async (req, res) => {
   try {
     const user = await getDb().user.findUnique({ where: { id: req.user.sub } })
     if (!user) {
+      console.error(`AUTH FAIL: GET /auth/me from ${req.ip} - token user id ${req.user.sub} no longer exists`)
       return res.status(401).json({ error: 'User no longer exists' })
     }
     res.json(sanitizeUser(user))

@@ -3,6 +3,8 @@ import 'dotenv/config'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { initDatabase } from './db.js'
+import { maybeStartBootstrap } from './bootstrap.js'
+import { accessLog } from './middleware/logger.js'
 
 import express from 'express'
 
@@ -12,6 +14,11 @@ const ROOT_DIR = path.resolve(__dirname, '..')
 
 // Initialize SQLite database before any routes are imported
 initDatabase()
+
+// First-startup bootstrap: if no accounts exist yet, mint a one-time signed
+// token and print it to the logs so the initial ADMIN can be created from
+// the login page (see server/bootstrap.js).
+await maybeStartBootstrap()
 
 // Import route modules (they depend on the initialized database)
 import authRouter from './routes/auth.js'
@@ -24,6 +31,10 @@ import projectRouter from './routes/project.js'
 const app = express()
 const port = process.env.PORT || 3000
 
+// Access log - one line per request (method, path, status, duration, ip).
+// Mounted before the routes so every response, including errors, is logged.
+app.use(accessLog)
+
 // --- API Routes ---
 app.use('/auth/', authRouter)
 app.use('/user/', userRouter)
@@ -34,6 +45,19 @@ app.use('/project/', projectRouter)
 // --- Static File Server ---
 // Serve static files from the public directory (compiled frontend + static assets)
 app.use(express.static(path.join(ROOT_DIR, 'public')))
+
+// --- Error Handler ---
+// Catches anything that slips past a route handler's own try/catch
+// (e.g. malformed JSON bodies rejected by express.json()). Logs the full
+// error; returns a JSON body instead of Express's default HTML page.
+app.use((err, req, res, next) => {
+  console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err)
+  if (res.headersSent) {
+    return next(err)
+  }
+  const status = Number.isInteger(err.status) ? err.status : 500
+  res.status(status).json({ error: status >= 500 ? 'Internal server error' : (err.message || 'Bad request') })
+})
 
 // --- Start the Server ---
 app.listen(port, () => {

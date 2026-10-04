@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Alert,
   IconButton,
@@ -22,18 +22,18 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import RequireRole from '../components/RequireRole'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import OfferingForm from '../components/OfferingForm'
-import { fetchOfferings, fetchOfferingTerms, deleteOffering } from '../services/api'
+import { fetchOfferings, fetchOfferingTerms, deleteOffering, fetchClasses, fetchTeachers } from '../services/api'
 
-/** Roles allowed to view / manage class offerings. */
-const ALLOWED_ROLES = ['TEACHER']
+/** Roles allowed to view / manage class offerings; every role except students. */
+const ALLOWED_ROLES = ['TEACHER', 'ADMIN']
 
 /**
- * Class offering management page – lists offerings with server-side
+ * Class offering management page - lists offerings with server-side
  * pagination, filters by term, and provides create / edit / delete
- * actions via modals. Accessible to TEACHER accounts only.
+ * actions via modals. Accessible to TEACHER and ADMIN accounts.
  */
 export default function Offerings () {
-  // Gate the page: teachers only
+  // Gate the page: all non-student roles
   return (
     <RequireRole roles={ALLOWED_ROLES}>
       <OfferingsContent />
@@ -51,6 +51,12 @@ function OfferingsContent () {
   // Term filter chips (distinct terms from the API + 'All')
   const [terms, setTerms] = useState([])
   const [filterTerm, setFilterTerm] = useState('*')
+
+  // Reference lists for mapping class_id / teacher_id to display labels.
+  // The list API returns plain rows (no joins); these lists are small and
+  // are loaded once on mount.
+  const [classOptions, setClassOptions] = useState([])
+  const [teacherOptions, setTeacherOptions] = useState([])
 
   // Pagination (server-side)
   const [page, setPage] = useState(1)          // 1-based for API
@@ -70,7 +76,7 @@ function OfferingsContent () {
     setLoading(true)
     setError('')
     try {
-      const resp = await fetchOfferings(filterTerm, '', page, rowsPerPage)
+      const resp = await fetchOfferings(filterTerm, '*', '*', page, rowsPerPage)
       setOfferings(resp.data || [])
       setTotal(resp.total || 0)
     } catch (err) {
@@ -100,6 +106,30 @@ function OfferingsContent () {
   useEffect(() => {
     loadTerms()
   }, [loadTerms])
+
+  /* ---- Load reference lists for ID -> label mapping (non-fatal on error) ---- */
+
+  const loadReferenceLists = useCallback(async () => {
+    try {
+      const [classesResp, teachersResp] = await Promise.all([
+        fetchClasses(1, 100),
+        fetchTeachers(1, 100)
+      ])
+      setClassOptions(classesResp.data || [])
+      setTeacherOptions(teachersResp.data || [])
+    } catch (err) {
+      // Missing reference lists only blank out the labels; not fatal.
+      setClassOptions([])
+      setTeacherOptions([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadReferenceLists()
+  }, [loadReferenceLists])
+
+  const classById = useMemo(() => new Map(classOptions.map(c => [c.id, c])), [classOptions])
+  const teacherById = useMemo(() => new Map(teacherOptions.map(t => [t.id, t])), [teacherOptions])
 
   /* ---- Handlers ---- */
 
@@ -156,8 +186,9 @@ function OfferingsContent () {
   /* ---- Render helpers ---- */
 
   function classLabel (o) {
-    if (!o || !o.class) return ''
-    return `${o.class.subject} ${o.class.number}`.trim()
+    const cls = o && classById.get(o.class_id)
+    if (!cls) return ''
+    return `${cls.subject} ${cls.number}`.trim()
   }
 
   const termOptions = [
@@ -216,10 +247,10 @@ function OfferingsContent () {
               <TableRow key={o.id} hover>
                 <TableCell>{o.id}</TableCell>
                 <TableCell>{classLabel(o)}</TableCell>
-                <TableCell>{o.class?.title || ''}</TableCell>
+                <TableCell>{classById.get(o.class_id)?.title || ''}</TableCell>
                 <TableCell>{o.term}</TableCell>
                 <TableCell>{o.section}</TableCell>
-                <TableCell>{o.teacher?.username || ''}</TableCell>
+                <TableCell>{teacherById.get(o.teacher_id)?.username || ''}</TableCell>
                 <TableCell align='right'>
                   <Tooltip title='Edit'>
                     <IconButton size='small' onClick={() => openEdit(o)}>

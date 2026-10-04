@@ -1,12 +1,12 @@
 /**
- * audit-prod.mjs — npm audit, scoped to what the production image actually ships.
+ * audit-prod.mjs - npm audit, scoped to what the production image actually ships.
  *
  * Why this exists:
  *   Plain `npm audit` audits the full ideal tree from package-lock.json. That
  *   tree includes devDependencies AND peer edges that were resolved into the
  *   lockfile. In this project @prisma/client declares the prisma CLI as an
- *   *optional* peer dependency, so the CLI — and its mysql2 / @prisma/config /
- *   deepmerge-ts subtree — shows up in every audit run, even though the
+ *   *optional* peer dependency, so the CLI - and its mysql2 / @prisma/config /
+ *   deepmerge-ts subtree - shows up in every audit run, even though the
  *   Dockerfile production stage installs with `npm ci --omit=dev
  *   --legacy-peer-deps` and never receives it. npm has no built-in way to
  *   ignore dev-only findings (and `--omit=dev` / `--omit=peer` do not help,
@@ -15,7 +15,7 @@
  * What this does:
  *   1. Recomputes the shipped set directly from package.json +
  *      package-lock.json: start from production dependencies and follow only
- *      hard `dependencies` / `optionalDependencies` edges — exactly what
+ *      hard `dependencies` / `optionalDependencies` edges - exactly what
  *      `npm ci --omit=dev --legacy-peer-deps` materializes (no peer
  *      auto-install).
  *   2. Runs the real `npm audit --json` against the full tree.

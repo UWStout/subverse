@@ -7,7 +7,8 @@ import {
   createOffering,
   updateOffering,
   fetchClasses,
-  fetchTeachers
+  fetchTeachers,
+  createClass
 } from '../src/services/api'
 
 // Mock the API layer so tests never touch the network.
@@ -15,7 +16,8 @@ vi.mock('../src/services/api', () => ({
   createOffering: vi.fn(),
   updateOffering: vi.fn(),
   fetchClasses: vi.fn(),
-  fetchTeachers: vi.fn()
+  fetchTeachers: vi.fn(),
+  createClass: vi.fn()
 }))
 
 const CLASSES = [
@@ -73,6 +75,7 @@ describe('OfferingForm', () => {
     fetchTeachers.mockResolvedValue({ data: TEACHERS, total: 2, page: 1, limit: 100, totalPages: 1 })
     createOffering.mockResolvedValue(OFFERING_1)
     updateOffering.mockResolvedValue(OFFERING_1)
+    createClass.mockResolvedValue({ id: 10, subject: 'PHYS', number: '150', title: 'Physics I' })
     user = await userEvent.setup()
   })
 
@@ -138,6 +141,93 @@ describe('OfferingForm', () => {
       section: 'A'
     })
     // Success notifies the page and closes the dialog
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the new-class fields only when "New Class" is selected', async () => {
+    renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    // Hidden by default (no class selected yet)
+    expect(screen.queryByText('New Class Details')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument()
+
+    // Shown when "New Class" is selected
+    await selectOption('Class', 'New Class')
+    expect(await screen.findByText('New Class Details')).toBeInTheDocument()
+    expect(screen.getByLabelText('Subject')).toBeInTheDocument()
+    expect(screen.getByLabelText('Number')).toBeInTheDocument()
+    expect(screen.getByLabelText('Title')).toBeInTheDocument()
+
+    // Hidden again once a real class is picked
+    await selectOption('Class', 'CS 101 – Intro CS')
+    expect(screen.queryByText('New Class Details')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Subject')).not.toBeInTheDocument()
+  })
+
+  it('creates the class first, then creates the offering with the new id', async () => {
+    const { onClose, onSubmit } = renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    await selectOption('Class', 'New Class')
+    await user.type(screen.getByLabelText('Subject'), 'PHYS')
+    await user.type(screen.getByLabelText('Number'), '150')
+    await user.type(screen.getByLabelText('Title'), 'Physics I')
+    await selectOption('Teacher', 'prof')
+    await user.type(screen.getByLabelText('Term'), 'FALL2025')
+    await user.type(screen.getByLabelText('Section'), 'A')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(createClass).toHaveBeenCalledWith({ subject: 'PHYS', number: '150', title: 'Physics I' })
+    // The offering references the id of the class that was just created
+    expect(createOffering).toHaveBeenCalledWith({
+      classId: 10,
+      teacherId: 1,
+      term: 'FALL2025',
+      section: 'A'
+    })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('validates the new-class fields before creating anything', async () => {
+    renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    await selectOption('Class', 'New Class')
+    await selectOption('Teacher', 'prof')
+    await user.type(screen.getByLabelText('Term'), 'FALL2025')
+    await user.type(screen.getByLabelText('Section'), 'A')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText('Subject is required')).toBeInTheDocument()
+    expect(screen.getByText('Number is required')).toBeInTheDocument()
+    expect(screen.getByText('Title is required')).toBeInTheDocument()
+    expect(createClass).not.toHaveBeenCalled()
+    expect(createOffering).not.toHaveBeenCalled()
+  })
+
+  it('moves an edited offering to a newly created class when requested', async () => {
+    const { onClose, onSubmit } = renderForm({ open: true, offering: OFFERING_1 })
+    await waitOptionsLoaded()
+
+    await selectOption('Class', 'New Class')
+    await user.type(screen.getByLabelText('Subject'), 'PHYS')
+    await user.type(screen.getByLabelText('Number'), '150')
+    await user.type(screen.getByLabelText('Title'), 'Physics I')
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    expect(createClass).toHaveBeenCalledWith({ subject: 'PHYS', number: '150', title: 'Physics I' })
+    expect(updateOffering).toHaveBeenCalledWith(1, {
+      classId: 10,
+      teacherId: 1,
+      term: 'FALL2025',
+      section: 'A'
+    })
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
   })

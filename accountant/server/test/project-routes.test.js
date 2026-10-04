@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
-import { mockPrisma, TEST_CLASS, TEST_OFFERING, TEST_PROJECT } from './setup.js'
+import jwt from 'jsonwebtoken'
+import { mockPrisma, TEST_CLASS, TEST_OFFERING, TEST_PROJECT, authedApp } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -22,9 +23,11 @@ describe('Project API Routes', () => {
 
   beforeEach(async () => {
     router = await getProjectRouter()
+    // Wrap so every request carries a valid session token (authenticated client)
     const express = await import('express')
-    app = express.default()
-    app.use('/project/', router)
+    const rawApp = express.default()
+    rawApp.use('/project/', router)
+    app = authedApp(rawApp)
   })
 
   // ---- GET /:class/:term ----
@@ -573,5 +576,40 @@ describe('Project API Routes', () => {
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to delete project' })
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Authentication â€” every route on this router requires a valid session token
+// ---------------------------------------------------------------------------
+describe('Authentication', () => {
+  let app
+
+  beforeEach(async () => {
+    const router = await getProjectRouter()
+    const express = await import('express')
+    app = express.default()
+    app.use('/project/', router)
+  })
+
+  it('returns 401 when no token is provided', async () => {
+    const res = await request(app).get('/project/*/FALL2025')
+    expect(res.status).toBe(401)
+    expect(res.body.error).toMatch(/authorization/i)
+  })
+
+  it('returns 401 for a malformed Authorization header', async () => {
+    const res = await request(app)
+      .get('/project/*/FALL2025')
+      .set('Authorization', 'Token abc123')
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 for a token signed with the wrong secret', async () => {
+    const badToken = jwt.sign({ sub: 1, username: 'testuser' }, 'wrong-secret', { expiresIn: '8h' })
+    const res = await request(app)
+      .get('/project/*/FALL2025')
+      .set('Authorization', `Bearer ${badToken}`)
+    expect(res.status).toBe(401)
   })
 })

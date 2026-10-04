@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
-import { mockPrisma, TEST_OFFERING } from './setup.js'
+import jwt from 'jsonwebtoken'
+import { mockPrisma, TEST_OFFERING, authedApp } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -15,6 +16,7 @@ async function getOfferingRouter () {
 
 const TEACHER = { id: 1, username: 'prof', email: 'prof@uni.edu', type: 'TEACHER' }
 const STUDENT = { id: 2, username: 'student', email: 'stu@uni.edu', type: 'STUDENT' }
+const ADMIN = { id: 3, username: 'admin', email: 'adm@uni.edu', type: 'ADMIN' }
 const CLS = { id: 1, subject: 'CS', number: '101', title: 'Intro CS' }
 
 describe('Offering API Routes', () => {
@@ -23,18 +25,20 @@ describe('Offering API Routes', () => {
 
   beforeEach(async () => {
     router = await getOfferingRouter()
+    // Wrap so every request carries a valid session token (authenticated client)
     const express = await import('express')
-    app = express.default()
-    app.use('/offering/', router)
+    const rawApp = express.default()
+    rawApp.use('/offering/', router)
+    app = authedApp(rawApp)
   })
 
-  // ---- GET /list ----
-  describe('GET /offering/list', () => {
-    it('returns all offerings with class and teacher details when no filters', async () => {
+  // ---- GET /list/:term/:class_id/:teacher_id ----
+  describe('GET /offering/list/:term/:class_id/:teacher_id', () => {
+    it('returns plain offering rows (no joins) when no filters', async () => {
       mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
       mockPrisma.offering.aggregate.mockResolvedValue({ _count: { _all: 1 } })
 
-      const res = await request(app).get('/offering/list')
+      const res = await request(app).get('/offering/list/*/*/*')
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
       expect(res.body.data).toHaveLength(1)
@@ -42,40 +46,59 @@ describe('Offering API Routes', () => {
       expect(res.body.page).toBe(1)
       expect(res.body.limit).toBe(25)
       expect(res.body.totalPages).toBe(1)
-      // No filter applied
-      expect(mockPrisma.offering.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} })
-      )
+      // No filter applied, and no include / join on the query
+      expect(mockPrisma.offering.findMany).toHaveBeenCalledWith({
+        where: {},
+        skip: 0,
+        take: 25,
+        orderBy: [{ term: 'asc' }, { section: 'asc' }, { id: 'asc' }]
+      })
+      // Rows carry only the raw offering fields (class_id / teacher_id, no details)
+      expect(res.body.data[0]).toEqual(TEST_OFFERING)
+      expect(res.body.data[0]).not.toHaveProperty('class')
+      expect(res.body.data[0]).not.toHaveProperty('teacher')
     })
 
-    it('applies term, section, class_id and teacher_id filters', async () => {
+    it('applies term, class_id and teacher_id filters from the URL positions', async () => {
       mockPrisma.offering.findMany.mockResolvedValue([])
       mockPrisma.offering.aggregate.mockResolvedValue({ _count: { _all: 0 } })
 
-      const res = await request(app).get('/offering/list?term=FALL2025&section=A&class_id=1&teacher_id=2')
+      const res = await request(app).get('/offering/list/FALL2025/1/2')
       expect(res.status).toBe(200)
       expect(mockPrisma.offering.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { term: 'FALL2025', section: 'A', class_id: 1, teacher_id: 2 }
+          where: { term: 'FALL2025', class_id: 1, teacher_id: 2 }
         })
       )
     })
 
-    it('treats term=* as no filter', async () => {
+    it('treats a single * position as no filter for that position', async () => {
       mockPrisma.offering.findMany.mockResolvedValue([])
       mockPrisma.offering.aggregate.mockResolvedValue({ _count: { _all: 0 } })
 
-      await request(app).get('/offering/list?term=*&section=A')
+      await request(app).get('/offering/list/*/1/*')
       expect(mockPrisma.offering.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { section: 'A' } })
+        expect.objectContaining({ where: { class_id: 1 } })
       )
     })
 
-    it('paginates results with skip/take', async () => {
+    it('returns 400 when class_id is neither numeric nor *', async () => {
+      const res = await request(app).get('/offering/list/*/abc/*')
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('class_id')
+    })
+
+    it('returns 400 when teacher_id is neither numeric nor *', async () => {
+      const res = await request(app).get('/offering/list/*/*/xyz')
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('teacher_id')
+    })
+
+    it('paginates results with skip/take from query params', async () => {
       mockPrisma.offering.findMany.mockResolvedValue([])
       mockPrisma.offering.aggregate.mockResolvedValue({ _count: { _all: 30 } })
 
-      const res = await request(app).get('/offering/list?page=2&limit=10')
+      const res = await request(app).get('/offering/list/*/*/*?page=2&limit=10')
       expect(res.status).toBe(200)
       expect(mockPrisma.offering.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 10, take: 10 })
@@ -87,7 +110,7 @@ describe('Offering API Routes', () => {
       mockPrisma.offering.findMany.mockResolvedValue([])
       mockPrisma.offering.aggregate.mockResolvedValue({ _count: { _all: 0 } })
 
-      await request(app).get('/offering/list?limit=500')
+      await request(app).get('/offering/list/*/*/*?limit=500')
       expect(mockPrisma.offering.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 100 })
       )
@@ -96,9 +119,71 @@ describe('Offering API Routes', () => {
     it('returns 500 on database error', async () => {
       mockPrisma.offering.findMany.mockRejectedValue(new Error('DB down'))
 
-      const res = await request(app).get('/offering/list')
+      const res = await request(app).get('/offering/list/*/*/*')
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to list offerings' })
+    })
+  })
+
+  // ---- GET /:id (details) ----
+  describe('GET /offering/:id', () => {
+    it('returns the offering with class, teacher and project IDs', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue({
+        id: 1,
+        class_id: 1,
+        teacher_id: 1,
+        term: 'FALL2025',
+        section: 'A',
+        class: { id: 1, subject: 'CS', number: '101', title: 'Intro CS' },
+        teacher: { id: 1, username: 'prof', email: 'prof@uni.edu' },
+        projects: [{ id: 5 }, { id: 9 }]
+      })
+
+      const res = await request(app).get('/offering/1')
+      expect(res.status).toBe(200)
+      expect(mockPrisma.offering.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 1 } })
+      )
+      expect(res.body.id).toBe(1)
+      expect(res.body.term).toBe('FALL2025')
+      expect(res.body.class).toEqual({ id: 1, subject: 'CS', number: '101', title: 'Intro CS' })
+      expect(res.body.teacher).toEqual({ id: 1, username: 'prof', email: 'prof@uni.edu' })
+      expect(res.body.project_ids).toEqual([5, 9])
+    })
+
+    it('returns an empty project ID list when the offering has no projects', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue({
+        ...TEST_OFFERING,
+        class: CLS,
+        teacher: TEACHER,
+        projects: []
+      })
+
+      const res = await request(app).get('/offering/1')
+      expect(res.status).toBe(200)
+      expect(res.body.project_ids).toEqual([])
+    })
+
+    it('returns 400 for non-numeric ID', async () => {
+      const res = await request(app).get('/offering/abc')
+      expect(res.status).toBe(400)
+      expect(res.body).toEqual({ error: 'Invalid offering ID' })
+    })
+
+    it('returns 404 when the offering does not exist', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(null)
+
+      const res = await request(app).get('/offering/999')
+      expect(res.status).toBe(404)
+      expect(res.body).toEqual({ error: 'Offering not found' })
+    })
+
+    it('returns 500 on database error', async () => {
+      mockPrisma.offering.findUnique.mockRejectedValue(new Error('DB down'))
+
+      const res = await request(app).get('/offering/1')
+      expect(res.status).toBe(500)
+      expect(res.body).toEqual({ error: 'Failed to retrieve offering' })
     })
   })
 
@@ -177,7 +262,7 @@ describe('Offering API Routes', () => {
       expect(res.body).toEqual({ error: 'Teacher not found' })
     })
 
-    it('returns 400 when the selected user is not a teacher', async () => {
+    it('returns 400 when the selected user is not a teacher or admin', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(CLS)
       mockPrisma.user.findUnique.mockResolvedValue(STUDENT)
 
@@ -185,7 +270,22 @@ describe('Offering API Routes', () => {
         .post('/offering/create')
         .send({ class_id: 1, teacher_id: 2, term: 'FALL2025', section: 'A' })
       expect(res.status).toBe(400)
-      expect(res.body.error).toContain('not a teacher')
+      expect(res.body.error).toContain('not a teacher or admin')
+    })
+
+    it('allows an admin account to be selected as instructor', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(CLS)
+      mockPrisma.user.findUnique.mockResolvedValue(ADMIN)
+      mockPrisma.offering.findUnique.mockResolvedValue(null)
+      mockPrisma.offering.create.mockResolvedValue(TEST_OFFERING)
+
+      const res = await request(app)
+        .post('/offering/create')
+        .send({ class_id: 1, teacher_id: 3, term: 'FALL2025', section: 'A' })
+      expect(res.status).toBe(201)
+      expect(mockPrisma.offering.create).toHaveBeenCalledWith({
+        data: { class_id: 1, teacher_id: 3, term: 'FALL2025', section: 'A' }
+      })
     })
 
     it('returns 409 when the class + term + section combination already exists', async () => {
@@ -301,7 +401,7 @@ describe('Offering API Routes', () => {
       expect(res.body).toEqual({ error: 'Class not found' })
     })
 
-    it('returns 400 when the new teacher is not a teacher', async () => {
+    it('returns 400 when the new teacher is not a teacher or admin', async () => {
       mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
       mockPrisma.class.findUnique.mockResolvedValue(CLS)
       mockPrisma.user.findUnique.mockResolvedValue(STUDENT)
@@ -310,7 +410,23 @@ describe('Offering API Routes', () => {
         .post('/offering/update/1')
         .send({ teacher_id: 2 })
       expect(res.status).toBe(400)
-      expect(res.body.error).toContain('not a teacher')
+      expect(res.body.error).toContain('not a teacher or admin')
+    })
+
+    it('allows reassigning the instructor to an admin account', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+      mockPrisma.class.findUnique.mockResolvedValue(CLS)
+      mockPrisma.user.findUnique.mockResolvedValue(ADMIN)
+      mockPrisma.offering.update.mockResolvedValue({ ...TEST_OFFERING, teacher_id: 3 })
+
+      const res = await request(app)
+        .post('/offering/update/1')
+        .send({ teacher_id: 3 })
+      expect(res.status).toBe(200)
+      expect(mockPrisma.offering.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { teacher_id: 3 }
+      })
     })
 
     it('returns 409 when the new combination conflicts with another offering', async () => {
@@ -387,5 +503,40 @@ describe('Offering API Routes', () => {
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to delete offering' })
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Authentication â€” every route on this router requires a valid session token
+// ---------------------------------------------------------------------------
+describe('Authentication', () => {
+  let app
+
+  beforeEach(async () => {
+    const router = await getOfferingRouter()
+    const express = await import('express')
+    app = express.default()
+    app.use('/offering/', router)
+  })
+
+  it('returns 401 when no token is provided', async () => {
+    const res = await request(app).get('/offering/list/*/*/*')
+    expect(res.status).toBe(401)
+    expect(res.body.error).toMatch(/authorization/i)
+  })
+
+  it('returns 401 for a malformed Authorization header', async () => {
+    const res = await request(app)
+      .get('/offering/list/*/*/*')
+      .set('Authorization', 'Token abc123')
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 for a token signed with the wrong secret', async () => {
+    const badToken = jwt.sign({ sub: 1, username: 'testuser' }, 'wrong-secret', { expiresIn: '8h' })
+    const res = await request(app)
+      .get('/offering/list/*/*/*')
+      .set('Authorization', `Bearer ${badToken}`)
+    expect(res.status).toBe(401)
   })
 })

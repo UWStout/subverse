@@ -1,12 +1,26 @@
 import { vi } from 'vitest'
+import jwt from 'jsonwebtoken'
 import path from 'path'
 import express from 'express'
 
 // ---------------------------------------------------------------------------
-// Mock Prisma client — shared mutable object so route modules see the same instance
+// Pin JWT config before any module evaluates `dotenv/config`
+// (server/middleware/auth.js). Vitest runs setupFiles before each test file's
+// imports, and dotenv does not override values that are already set - so this
+// wins over the project .env and any ambient shell env. Tests therefore always
+// run against a known secret regardless of local development configuration.
+// (None of this file's own imports load dotenv, so pinning here is safe.)
+// ---------------------------------------------------------------------------
+export const TEST_JWT_SECRET = 'test-secret-do-not-use-in-production'
+process.env.JWT_SECRET = TEST_JWT_SECRET
+process.env.JWT_TIMEOUT = '8h'
+
+// ---------------------------------------------------------------------------
+// Mock Prisma client - shared mutable object so route modules see the same instance
 // ---------------------------------------------------------------------------
 export const mockPrisma = {
   user: {
+    count: vi.fn().mockResolvedValue(0),
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
@@ -16,6 +30,7 @@ export const mockPrisma = {
     delete: vi.fn().mockResolvedValue({})
   },
   class: {
+    count: vi.fn().mockResolvedValue(0),
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
@@ -25,6 +40,7 @@ export const mockPrisma = {
     delete: vi.fn().mockResolvedValue({})
   },
   offering: {
+    count: vi.fn().mockResolvedValue(0),
     findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
@@ -59,6 +75,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 
   const resetModel = (model) => {
+    if (model.count) model.count.mockResolvedValue(0)
     model.findFirst.mockResolvedValue(null)
     model.findUnique.mockResolvedValue(null)
     model.findMany.mockResolvedValue([])
@@ -78,7 +95,7 @@ beforeEach(() => {
 })
 
 // ---------------------------------------------------------------------------
-// Mock bcryptjs — deterministic hash so we don't depend on real crypto
+// Mock bcryptjs - deterministic hash so we don't depend on real crypto
 // ---------------------------------------------------------------------------
 vi.doMock('bcryptjs', () => ({
   default: {
@@ -88,7 +105,7 @@ vi.doMock('bcryptjs', () => ({
 }))
 
 // ---------------------------------------------------------------------------
-// Mock the db module — use absolute path so it matches what server/routes/* resolves
+// Mock the db module - use absolute path so it matches what server/routes/* resolves
 // ---------------------------------------------------------------------------
 const dbPath = path.resolve(__dirname, '..', 'db.js')
 
@@ -161,4 +178,37 @@ export const TEST_PROJECT = {
   subversion_url: null,
   git_url: 'https://github.com/example/final-project.git',
   description: 'Complete final assignment for the course'
+}
+
+/**
+ * A valid session token signed with the pinned test secret (see top of file),
+ * which is what server/middleware/auth.js uses when running under vitest.
+ */
+export const AUTH_TOKEN = jwt.sign(
+  { sub: TEST_USER.id, username: 'testuser', type: 'STUDENT' },
+  TEST_JWT_SECRET,
+  { expiresIn: '8h' }
+)
+
+/**
+ * Sign a session token for an arbitrary identity (id / username / role).
+ * Defaults match TEST_USER so fixtures stay consistent. Used to exercise
+ * role-based authorization rules in route tests.
+ */
+export function makeToken ({ sub = TEST_USER.id, username = 'testuser', type = 'STUDENT' } = {}) {
+  return jwt.sign({ sub, username, type }, TEST_JWT_SECRET, { expiresIn: '8h' })
+}
+
+/**
+ * Wrap an Express app so every request it receives carries a valid session
+ * token - simulates an authenticated client. Requests that already carry an
+ * Authorization header are left untouched (used by the 401 tests).
+ */
+export function authedApp (app) {
+  return (req, res) => {
+    if (!req.headers.authorization) {
+      req.headers.authorization = `Bearer ${AUTH_TOKEN}`
+    }
+    return app(req, res)
+  }
 }

@@ -15,7 +15,7 @@ import {
   fetchTeachers
 } from '../src/services/api'
 
-// Mock the auth context — the page only consumes the useAuth hook.
+// Mock the auth context - the page only consumes the useAuth hook.
 vi.mock('../src/context/AuthContext', () => ({
   useAuth: vi.fn()
 }))
@@ -35,15 +35,18 @@ const TEACHER = { id: 1, username: 'prof', type: 'TEACHER' }
 const STUDENT = { id: 2, username: 'student', type: 'STUDENT' }
 const ADMIN = { id: 3, username: 'admin', type: 'ADMIN' }
 
+// Plain offering row - the list API returns no joined class / teacher data.
 const OFFERING_1 = {
   id: 1,
   class_id: 1,
   teacher_id: 1,
   term: 'FALL2025',
-  section: 'A',
-  class: { id: 1, subject: 'CS', number: '101', title: 'Intro CS' },
-  teacher: { id: 1, username: 'prof', email: 'prof@uni.edu' }
+  section: 'A'
 }
+
+// Reference-list rows used by the page to map class_id / teacher_id → labels.
+const CLASS_1 = { id: 1, subject: 'CS', number: '101', title: 'Intro CS' }
+const TEACHER_ACCOUNT = { id: 1, username: 'prof', email: 'prof@uni.edu', type: 'TEACHER' }
 
 const LIST_RESPONSE = { data: [OFFERING_1], total: 1, page: 1, limit: 25, totalPages: 1 }
 
@@ -73,14 +76,14 @@ describe('Offerings page', () => {
     deleteOffering.mockResolvedValue({ message: 'Offering deleted successfully' })
     createOffering.mockResolvedValue(OFFERING_1)
     updateOffering.mockResolvedValue(OFFERING_1)
-    fetchClasses.mockResolvedValue({ data: [OFFERING_1.class], total: 1, page: 1, limit: 25, totalPages: 1 })
-    fetchTeachers.mockResolvedValue({ data: [OFFERING_1.teacher], total: 1, page: 1, limit: 25, totalPages: 1 })
+    fetchClasses.mockResolvedValue({ data: [CLASS_1], total: 1, page: 1, limit: 100, totalPages: 1 })
+    fetchTeachers.mockResolvedValue({ data: [TEACHER_ACCOUNT], total: 1, page: 1, limit: 100, totalPages: 1 })
     user = await userEvent.setup()
   })
 
   /* ---- Role gating ---- */
 
-  it('redirects non-teacher users to the users page', async () => {
+  it('redirects students to the users page', async () => {
     renderPage(STUDENT)
 
     expect(await screen.findByText('Users page')).toBeInTheDocument()
@@ -88,11 +91,11 @@ describe('Offerings page', () => {
     expect(fetchOfferings).not.toHaveBeenCalled()
   })
 
-  it('redirects admins as well (TEACHER only)', async () => {
+  it('allows admins to view the offerings page', async () => {
     renderPage(ADMIN)
 
-    expect(await screen.findByText('Users page')).toBeInTheDocument()
-    expect(screen.queryByText('Class Offerings')).not.toBeInTheDocument()
+    expect(await screen.findByText('Class Offerings')).toBeInTheDocument()
+    expect(screen.queryByText('Users page')).not.toBeInTheDocument()
   })
 
   /* ---- Listing ---- */
@@ -108,7 +111,7 @@ describe('Offerings page', () => {
     expect(await screen.findByText('No offerings found')).toBeInTheDocument()
   })
 
-  it('renders offerings with class and teacher details', async () => {
+  it('renders offerings with class and teacher labels mapped from the reference lists', async () => {
     renderPage(TEACHER)
 
     expect(await screen.findByText('Class Offerings')).toBeInTheDocument()
@@ -118,13 +121,28 @@ describe('Offerings page', () => {
     expect(within(table).getByText('Intro CS')).toBeInTheDocument()
     expect(within(table).getByText('FALL2025')).toBeInTheDocument()
     expect(within(table).getByText('prof')).toBeInTheDocument()
+    // The reference lists are fetched once on mount (small, one page of 100)
+    expect(fetchClasses).toHaveBeenCalledWith(1, 100)
+    expect(fetchTeachers).toHaveBeenCalledWith(1, 100)
+  })
+
+  it('still renders the table when the reference lists fail', async () => {
+    fetchClasses.mockRejectedValue(new Error('Failed to list classes'))
+    fetchTeachers.mockRejectedValue(new Error('Failed to list teachers'))
+
+    renderPage(TEACHER)
+
+    // Offering data is present in the table even though the label maps are empty
+    const table = screen.getByRole('table')
+    expect(await within(table).findByText('FALL2025')).toBeInTheDocument()
+    expect(within(table).getByText('A')).toBeInTheDocument()
   })
 
   it('fetches the default page with no term filter', async () => {
     renderPage(TEACHER)
 
     await screen.findByText('Class Offerings')
-    expect(fetchOfferings).toHaveBeenCalledWith('*', '', 1, 10)
+    expect(fetchOfferings).toHaveBeenCalledWith('*', '*', '*', 1, 10)
   })
 
   it('shows the empty state when no offerings match', async () => {
@@ -164,7 +182,7 @@ describe('Offerings page', () => {
 
     await user.click(screen.getByRole('button', { name: 'SPRING2026' }))
 
-    expect(fetchOfferings).toHaveBeenCalledWith('SPRING2026', '', 1, 10)
+    expect(fetchOfferings).toHaveBeenCalledWith('SPRING2026', '*', '*', 1, 10)
   })
 
   /* ---- Pagination ---- */
@@ -177,7 +195,7 @@ describe('Offerings page', () => {
 
     await user.click(screen.getByRole('button', { name: 'Go to next page' }))
 
-    expect(fetchOfferings).toHaveBeenCalledWith('*', '', 2, 10)
+    expect(fetchOfferings).toHaveBeenCalledWith('*', '*', '*', 2, 10)
   })
 
   it('refetches from page 1 when the rows-per-page size changes', async () => {
@@ -188,7 +206,7 @@ describe('Offerings page', () => {
     await user.click(screen.getByLabelText('Rows per page:'))
     await user.click(await screen.findByRole('option', { name: '5' }))
 
-    expect(fetchOfferings).toHaveBeenCalledWith('*', '', 1, 5)
+    expect(fetchOfferings).toHaveBeenCalledWith('*', '*', '*', 1, 5)
   })
 
   /* ---- Create / Edit modals ---- */
@@ -269,7 +287,7 @@ describe('Offerings page', () => {
 
     expect(deleteOffering).toHaveBeenCalledWith(1)
     // Deleting the only row on page 2 steps back to page 1 (refetches it)
-    expect(fetchOfferings).toHaveBeenLastCalledWith('*', '', 1, 10)
+    expect(fetchOfferings).toHaveBeenLastCalledWith('*', '*', '*', 1, 10)
   })
 
   it('closes the create modal when cancelled', async () => {

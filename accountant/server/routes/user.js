@@ -2,6 +2,7 @@
 import bcrypt from 'bcryptjs'
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
+import { authenticate } from '../middleware/auth.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -14,6 +15,20 @@ const userRouter = new Router()
 
 // Install Json body parser
 userRouter.use(json())
+
+// All user routes require a valid session token
+userRouter.use(authenticate)
+
+/** Valid values for the User.type field (mirrors the Prisma UserType enum). */
+const VALID_TYPES = ['STUDENT', 'TEACHER', 'ADMIN']
+
+/**
+ * Count how many ADMIN accounts exist. Used to protect the last remaining
+ * admin from deletion or demotion.
+ */
+async function countAdmins () {
+  return getDb().user.count({ where: { type: 'ADMIN' } })
+}
 
 /**
  * Parse ?page=N&limit=N query params into pagination values.
@@ -68,15 +83,21 @@ async function checkForConflicts (username, email) {
 // Get list of users (optionally filtered by type, with pagination)
 userRouter.get('/list/:type', async (req, res) => {
   try {
+    // Students have no access to user listing
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot list users' })
+    }
+
     const { type } = req.params
 
     const where = {}
     if (type && type !== '*') {
-      const validTypes = ['STUDENT', 'TEACHER', 'ADMIN']
-      if (!validTypes.includes(type)) {
-        return res.status(400).json({ error: `Invalid user type. Must be one of: ${validTypes.join(', ')}` })
+      // Accepts a single type or a comma-separated list, e.g. 'TEACHER,ADMIN'
+      const types = type.split(',')
+      if (!types.every(t => VALID_TYPES.includes(t))) {
+        return res.status(400).json({ error: `Invalid user type. Must be one of: ${VALID_TYPES.join(', ')}` })
       }
-      where.type = type
+      where.type = types.length === 1 ? types[0] : { in: types }
     }
 
     const { skip, take, page } = parsePagination(req.query)
@@ -131,6 +152,12 @@ userRouter.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID' })
     }
 
+    // Students may only view their own account details (used to populate
+    // the self-update form); teachers and admins may view any account
+    if (req.user.type === 'STUDENT' && id !== req.user.sub) {
+      return res.status(403).json({ error: 'Students can only view their own account' })
+    }
+
     // Retrieve the user details by id
     const user = await getDb().user.findUnique({
       where: { id },
@@ -164,9 +191,18 @@ userRouter.post('/create', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: username, email, password' })
     }
 
+    // Role-based creation rules:
+    //  - Students cannot create accounts at all
+    //  - Teachers may only create STUDENT or TEACHER accounts (never ADMIN)
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot create users' })
+    }
+    if (req.user.type === 'TEACHER' && type === 'ADMIN') {
+      return res.status(403).json({ error: 'Teachers cannot create admin accounts' })
+    }
+
     // Validate user type
-    const validTypes = ['STUDENT', 'TEACHER', 'ADMIN']
-    const userType = (type && validTypes.includes(type)) ? type : 'STUDENT'
+    const userType = (type && VALID_TYPES.includes(type)) ? type : 'STUDENT'
 
     // Check for duplicate username or email
     const conflicts = await checkForConflicts(username, email)
@@ -220,6 +256,23 @@ userRouter.post('/update/:id', async (req, res) => {
       return res.status(404).json({ error: 'User not found' })
     }
 
+    // --- Role-based authorization for the update target ---
+    //  - Students may only update their own account
+    //  - Teachers may only update student accounts or their own account
+    //  - Admins may update any account
+    const isSelf = id === req.user.sub
+    if (req.user.type === 'STUDENT' && !isSelf) {
+      return res.status(403).json({ error: 'Students can only update their own account' })
+    }
+    if (req.user.type === 'TEACHER' && !isSelf && existingUser.type !== 'STUDENT') {
+      return res.status(403).json({ error: 'Teachers can only update student accounts or their own account' })
+    }
+
+    // Only admins may change a user's type
+    if (type !== undefined && req.user.type !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only admins can change a user type' })
+    }
+
     // Build update data
     const updateData = {}
 
@@ -252,9 +305,15 @@ userRouter.post('/update/:id', async (req, res) => {
     }
 
     if (type !== undefined) {
-      const validTypes = ['STUDENT', 'TEACHER', 'ADMIN']
-      if (!validTypes.includes(type)) {
-        return res.status(400).json({ error: `Invalid user type. Must be one of: ${validTypes.join(', ')}` })
+      if (!VALID_TYPES.includes(type)) {
+        return res.status(400).json({ error: `Invalid user type. Must be one of: ${VALID_TYPES.join(', ')}` })
+      }
+      // Never allow the last remaining admin account to be demoted
+      if (existingUser.type === 'ADMIN' && type !== 'ADMIN') {
+        const adminCount = await countAdmins()
+        if (adminCount <= 1) {
+          return res.status(403).json({ error: 'Cannot change the type of the last admin account' })
+        }
       }
       updateData.type = type
     }
@@ -287,10 +346,28 @@ userRouter.delete('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID' })
     }
 
+    // Students cannot delete accounts at all
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot delete users' })
+    }
+
     // Check user exists
     const existing = await getDb().user.findUnique({ where: { id } })
     if (!existing) {
       return res.status(404).json({ error: 'User not found' })
+    }
+
+    // Teachers may delete student or teacher accounts, but never admins
+    if (req.user.type === 'TEACHER' && existing.type === 'ADMIN') {
+      return res.status(403).json({ error: 'Teachers cannot delete admin accounts' })
+    }
+
+    // Never allow the last remaining admin account to be deleted
+    if (existing.type === 'ADMIN') {
+      const adminCount = await countAdmins()
+      if (adminCount <= 1) {
+        return res.status(403).json({ error: 'Cannot delete the last admin account' })
+      }
     }
 
     // Delete associated assignments (cascade on user delete handles this,

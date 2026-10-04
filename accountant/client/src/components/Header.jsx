@@ -5,21 +5,24 @@ import ThemeToggle from './ThemeToggle'
 
 const NAV_LINKS = [
   { label: 'Users', to: '/users' },
-  // Offerings management is restricted to teacher accounts
-  { label: 'Offerings', to: '/offerings', roles: ['TEACHER'] }
+  // Offerings is available to every role except students
+  { label: 'Offerings', to: '/offerings', exceptRoles: ['STUDENT'] }
 ]
 
 /**
  * Top navigation bar with brand, nav links, and a theme toggle.
- * Links that declare `roles` are only shown to matching user types.
+ * Links that declare `roles` are only shown to matching user types;
+ * links that declare `exceptRoles` are hidden from those user types.
  */
 export default function Header () {
   const location = useLocation()
   const { user } = useAuth()
 
-  const visibleLinks = NAV_LINKS.filter(link =>
-    !link.roles || (user && link.roles.includes(user.type))
-  )
+  const visibleLinks = NAV_LINKS.filter(link => {
+    if (link.roles) return user && link.roles.includes(user.type)
+    if (link.exceptRoles) return user && !link.exceptRoles.includes(user.type)
+    return true
+  })
 
   return (
     <AppBar position='sticky'>

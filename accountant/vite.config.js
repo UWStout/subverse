@@ -37,4 +37,4 @@ export default defineConfig({
 })
 
 // NOTE: test configuration lives in vitest.config.js at the project root
-// (both the client and server projects) — not here. This file is dev/build only.
+// (both the client and server projects) - not here. This file is dev/build only.

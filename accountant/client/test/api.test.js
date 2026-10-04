@@ -11,6 +11,7 @@ import {
   createOffering,
   updateOffering,
   deleteOffering,
+  createClass,
   fetchClasses,
   fetchTeachers,
   getToken,
@@ -18,7 +19,9 @@ import {
   clearToken,
   getAuthHeaders,
   login,
-  fetchCurrentUser
+  fetchCurrentUser,
+  fetchBootstrapStatus,
+  createBootstrapAccount
 } from '../src/services/api'
 
 /** Build a minimal Response-like object for the mocked fetch. */
@@ -43,7 +46,7 @@ describe('services/api', () => {
 
       const res = await fetchUsers('STUDENT', 2, 10)
 
-      expect(fetch).toHaveBeenCalledWith('/user/list/STUDENT?page=2&limit=10')
+      expect(fetch).toHaveBeenCalledWith('/user/list/STUDENT?page=2&limit=10', { headers: {} })
       expect(res.total).toBe(1)
     })
 
@@ -60,7 +63,7 @@ describe('services/api', () => {
 
       await checkAvailability('a b', 'x@y.z')
 
-      expect(fetch).toHaveBeenCalledWith('/user/check/a%20b/x%40y.z')
+      expect(fetch).toHaveBeenCalledWith('/user/check/a%20b/x%40y.z', { headers: {} })
     })
   })
 
@@ -80,6 +83,49 @@ describe('services/api', () => {
 
       setToken('tok123')
       expect(getAuthHeaders()).toEqual({ Authorization: 'Bearer tok123' })
+    })
+  })
+
+  describe('auth headers on protected endpoints', () => {
+    it('sends the stored token as a Bearer header on GET requests', async () => {
+      setToken('tok123')
+      fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 }))
+
+      await fetchUsers()
+
+      expect(fetch).toHaveBeenCalledWith('/user/list/*?page=1&limit=25', {
+        headers: { Authorization: 'Bearer tok123' }
+      })
+    })
+
+    it('merges the Bearer header with Content-Type on POST requests', async () => {
+      setToken('tok123')
+      fetch.mockResolvedValueOnce(jsonResponse({ user: { id: 10 } }))
+
+      await createUser({ username: 'a', email: 'b@c.d', password: 'p', type: 'STUDENT' })
+
+      expect(fetch).toHaveBeenCalledWith('/user/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok123' },
+        body: JSON.stringify({ username: 'a', email: 'b@c.d', password: 'p', type: 'STUDENT' })
+      })
+    })
+
+    it('sends the Bearer header on DELETE requests', async () => {
+      setToken('tok123')
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'User deleted successfully' }))
+
+      await deleteUser(4)
+
+      expect(fetch).toHaveBeenCalledWith('/user/4', { method: 'DELETE', headers: { Authorization: 'Bearer tok123' } })
+    })
+
+    it('clears the stored token when a protected endpoint returns 401', async () => {
+      setToken('stale')
+      fetch.mockResolvedValueOnce({ ok: false, status: 401, json: () => Promise.resolve({ error: 'Invalid or expired token' }) })
+
+      await expect(fetchUser(9)).rejects.toThrow('Invalid or expired token')
+      expect(getToken()).toBeNull()
     })
   })
 
@@ -112,7 +158,7 @@ describe('services/api', () => {
 
       const res = await fetchUser(9)
 
-      expect(fetch).toHaveBeenCalledWith('/user/9')
+      expect(fetch).toHaveBeenCalledWith('/user/9', { headers: {} })
       expect(res.username).toBe('alice')
     })
 
@@ -169,7 +215,7 @@ describe('services/api', () => {
 
       await deleteUser(4)
 
-      expect(fetch).toHaveBeenCalledWith('/user/4', { method: 'DELETE' })
+      expect(fetch).toHaveBeenCalledWith('/user/4', { method: 'DELETE', headers: {} })
     })
 
     it('throws the server-provided error message on failure', async () => {
@@ -180,20 +226,20 @@ describe('services/api', () => {
   })
 
   describe('fetchOfferings', () => {
-    it('omits the term param for the wildcard and sends pagination', async () => {
+    it('sends all wildcard positions and pagination by default', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 }))
 
       await fetchOfferings()
 
-      expect(fetch).toHaveBeenCalledWith('/offering/list?page=1&limit=25')
+      expect(fetch).toHaveBeenCalledWith('/offering/list/*/*/*?page=1&limit=25', { headers: {} })
     })
 
-    it('sends term and section filters when provided', async () => {
+    it('sends term, class_id and teacher_id as URL positions when provided', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 3, limit: 10, totalPages: 3 }))
 
-      await fetchOfferings('FALL2025', 'B', 3, 10)
+      await fetchOfferings('FALL2025', 1, 2, 3, 10)
 
-      expect(fetch).toHaveBeenCalledWith('/offering/list?term=FALL2025&section=B&page=3&limit=10')
+      expect(fetch).toHaveBeenCalledWith('/offering/list/FALL2025/1/2?page=3&limit=10', { headers: {} })
     })
 
     it('throws the server-provided error message on failure', async () => {
@@ -209,7 +255,7 @@ describe('services/api', () => {
 
       const terms = await fetchOfferingTerms()
 
-      expect(fetch).toHaveBeenCalledWith('/offering/terms')
+      expect(fetch).toHaveBeenCalledWith('/offering/terms', { headers: {} })
       expect(terms).toEqual(['FALL2025', 'SPRING2026'])
     })
 
@@ -272,7 +318,7 @@ describe('services/api', () => {
 
       await deleteOffering(7)
 
-      expect(fetch).toHaveBeenCalledWith('/offering/7', { method: 'DELETE' })
+      expect(fetch).toHaveBeenCalledWith('/offering/7', { method: 'DELETE', headers: {} })
     })
 
     it('throws the server-provided error message on failure', async () => {
@@ -282,13 +328,34 @@ describe('services/api', () => {
     })
   })
 
+  describe('createClass', () => {
+    it('posts the class fields and returns the created class', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ id: 10, subject: 'PHYS', number: '150', title: 'Physics I' }))
+
+      const result = await createClass({ subject: 'PHYS', number: '150', title: 'Physics I' })
+
+      expect(fetch).toHaveBeenCalledWith('/class/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject: 'PHYS', number: '150', title: 'Physics I' })
+      })
+      expect(result.id).toBe(10)
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Class already exists with this subject and number' }, false))
+
+      await expect(createClass({ subject: 'CS', number: '101', title: 'x' })).rejects.toThrow('Class already exists with this subject and number')
+    })
+  })
+
   describe('fetchClasses', () => {
-    it('requests all classes with the wildcard filters', async () => {
+    it('requests all classes (no filters)', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 1, limit: 100, totalPages: 0 }))
 
       await fetchClasses()
 
-      expect(fetch).toHaveBeenCalledWith('/class/list/*/*?page=1&limit=100')
+      expect(fetch).toHaveBeenCalledWith('/class/list/*/*?page=1&limit=100', { headers: {} })
     })
 
     it('throws the server-provided error message on failure', async () => {
@@ -299,12 +366,12 @@ describe('services/api', () => {
   })
 
   describe('fetchTeachers', () => {
-    it('requests the TEACHER user list', async () => {
+    it('requests the teacher and admin user lists', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 1, limit: 100, totalPages: 0 }))
 
       await fetchTeachers()
 
-      expect(fetch).toHaveBeenCalledWith('/user/list/TEACHER?page=1&limit=100')
+      expect(fetch).toHaveBeenCalledWith('/user/list/TEACHER,ADMIN?page=1&limit=100', { headers: {} })
     })
 
     it('throws the server-provided error message on failure', async () => {
@@ -331,6 +398,67 @@ describe('services/api', () => {
 
       await expect(fetchCurrentUser()).rejects.toThrow('Not logged in')
       expect(getToken()).toBeNull()
+    })
+  })
+
+  describe('fetchBootstrapStatus', () => {
+    it('returns true when the server is in bootstrap mode', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ bootstrap: true }))
+
+      const res = await fetchBootstrapStatus()
+
+      expect(fetch).toHaveBeenCalledWith('/auth/bootstrap/status')
+      expect(res).toBe(true)
+    })
+
+    it('returns false when accounts already exist', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ bootstrap: false }))
+
+      const res = await fetchBootstrapStatus()
+
+      expect(res).toBe(false)
+    })
+
+    it('throws on a non-OK response', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, false))
+
+      await expect(fetchBootstrapStatus()).rejects.toThrow('Failed to check bootstrap status')
+    })
+  })
+
+  describe('createBootstrapAccount', () => {
+    it('posts the account details and token without an auth header', async () => {
+      setToken('tok123') // a stored session token must NOT be sent - bootstrap is public
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'ok', user: { id: 1, type: 'ADMIN' } }))
+
+      const res = await createBootstrapAccount({
+        token: 'bootstrap-token',
+        username: 'rootadmin',
+        email: 'root@example.com',
+        password: 'sup3r-secret',
+        firstName: 'Root',
+        lastName: 'Admin'
+      })
+
+      expect(fetch).toHaveBeenCalledWith('/auth/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: 'bootstrap-token',
+          username: 'rootadmin',
+          email: 'root@example.com',
+          password: 'sup3r-secret',
+          first_name: 'Root',
+          last_name: 'Admin'
+        })
+      })
+      expect(res.user.type).toBe('ADMIN')
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Bootstrap token has expired' }, false))
+
+      await expect(createBootstrapAccount({ token: 'x', username: 'a', email: 'b@c.d', password: 'p' })).rejects.toThrow('Bootstrap token has expired')
     })
   })
 

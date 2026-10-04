@@ -4,7 +4,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import PrivateRoute from '../src/components/PrivateRoute'
 import { useAuth } from '../src/context/AuthContext'
 
-// Mock the auth context — the guard only consumes the useAuth hook.
+// Mock the auth context - the guard only consumes the useAuth hook.
 vi.mock('../src/context/AuthContext', () => ({
   useAuth: vi.fn()
 }))
