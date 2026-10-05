@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
-import { mockPrisma, TEST_CLASS, TEST_OFFERING, TEST_PROJECT, authedApp } from './setup.js'
+import { mockPrisma, TEST_CLASS, TEST_OFFERING, TEST_PROJECT, authedApp, makeToken } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -13,6 +13,12 @@ async function getProjectRouter () {
   const mod = await import(routePath)
   return mod.default
 }
+
+// Role tokens for exercising the permission rules (the default session is a student).
+// TEST_OFFERING belongs to teacher_id 1, so the sub-20 teacher below does NOT
+// teach it - handy for the "not their own offering" 403 cases.
+const TEACHER_TOKEN = makeToken({ sub: 20, username: 'teacher', type: 'TEACHER' })
+const ADMIN_TOKEN = makeToken({ sub: 10, username: 'admin', type: 'ADMIN' })
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -44,10 +50,27 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
-      const res = await request(app).get('/project/list/CS-101/*')
+      const res = await request(app)
+        .get('/project/list/CS-101/*')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
       expect(res.body.total).toBe(1)
+    })
+
+    it('lets teachers list all projects (no assignment filtering)', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+      mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
+      mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
+      mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
+
+      const res = await request(app)
+        .get('/project/list/CS-101/*')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+      expect(res.status).toBe(200)
+      expect(res.body.data).toHaveLength(1)
+      // Teachers are not filtered by assignments
+      expect(mockPrisma.assignment.findMany).not.toHaveBeenCalled()
     })
 
     it('returns projects filtered by term when class is wildcard', async () => {
@@ -55,7 +78,9 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
-      const res = await request(app).get('/project/list/*/FALL2025')
+      const res = await request(app)
+        .get('/project/list/*/FALL2025')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
       expect(res.body.total).toBe(1)
@@ -67,7 +92,9 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 2 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT, { ...TEST_PROJECT, id: 2 }])
 
-      const res = await request(app).get('/project/list/CS-101/FALL2025')
+      const res = await request(app)
+        .get('/project/list/CS-101/FALL2025')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
       expect(res.body.data).toHaveLength(2)
@@ -79,7 +106,9 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
-      const res = await request(app).get('/project/list/CS-101/FALL2025')
+      const res = await request(app)
+        .get('/project/list/CS-101/FALL2025')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       // offering_id stays a raw ID; the offering record is not embedded
       expect(res.body.data[0].offering_id).toBe(TEST_OFFERING.id)
@@ -90,7 +119,9 @@ describe('Project API Routes', () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockResolvedValue([])
 
-      const res = await request(app).get('/project/list/CS-101/FALL2025')
+      const res = await request(app)
+        .get('/project/list/CS-101/FALL2025')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.data).toEqual([])
       expect(res.body.total).toBe(0)
@@ -102,9 +133,47 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 120 } })
       mockPrisma.project.findMany.mockResolvedValue(Array.from({ length: 100 }, (_, i) => ({ ...TEST_PROJECT, id: i + 1 })))
 
-      const res = await request(app).get('/project/list/CS-101/FALL2025?limit=200')
+      const res = await request(app)
+        .get('/project/list/CS-101/FALL2025?limit=200')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.limit).toBe(100) // capped from 200 to maxLimit
+    })
+
+    it('students only see projects they are assigned to', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+      mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
+      // Default session is student sub=1
+      mockPrisma.assignment.findMany.mockResolvedValue([{ project_id: 1 }, { project_id: 2 }])
+      mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 2 } })
+      mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT, { ...TEST_PROJECT, id: 2 }])
+
+      const res = await request(app).get('/project/list/CS-101/*')
+      expect(res.status).toBe(200)
+      expect(mockPrisma.assignment.findMany).toHaveBeenCalledWith({
+        where: { student_id: 1 },
+        select: { project_id: true }
+      })
+      // Result set is restricted to the student's assigned projects
+      expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { offering_id: { in: [TEST_OFFERING.id] }, id: { in: [1, 2] } }
+        })
+      )
+      expect(res.body.data).toHaveLength(2)
+    })
+
+    it('returns an empty list for students with no assignments', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+      mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
+      // assignment.findMany resolves to [] by default
+
+      const res = await request(app).get('/project/list/CS-101/*')
+      expect(res.status).toBe(200)
+      expect(res.body.data).toEqual([])
+      expect(res.body.total).toBe(0)
+      // No project query is issued at all when nothing is assigned
+      expect(mockPrisma.project.findMany).not.toHaveBeenCalled()
     })
 
     it('returns 400 for invalid class code format', async () => {
@@ -141,7 +210,9 @@ describe('Project API Routes', () => {
     it('returns 404 when project does not exist', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(null)
 
-      const res = await request(app).get('/project/999')
+      const res = await request(app)
+        .get('/project/999')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(404)
       expect(res.body).toEqual({ error: 'Project not found' })
     })
@@ -149,14 +220,16 @@ describe('Project API Routes', () => {
     it('returns project details when found', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
 
-      const res = await request(app).get('/project/1')
+      const res = await request(app)
+        .get('/project/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.id).toBe(1)
       expect(res.body.title).toBe('Final Project')
       expect(res.body.description).toBe('Complete final assignment for the course')
     })
 
-    it('returns project with nested offering and teacher info', async () => {
+    it('returns project with nested offering, teacher and assignment info for non-students', async () => {
       const projectWithOffering = {
         ...TEST_PROJECT,
         offering: {
@@ -170,25 +243,55 @@ describe('Project API Routes', () => {
       }
       mockPrisma.project.findUnique.mockResolvedValue(projectWithOffering)
 
-      const res = await request(app).get('/project/1')
+      const res = await request(app)
+        .get('/project/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.offering.class.subject).toBe('CS')
       expect(res.body.offering.teacher.username).toBe('prof')
       expect(res.body.assignments).toHaveLength(1)
+      // Non-students get the assignments include (student info is visible to them)
+      expect(mockPrisma.project.findUnique.mock.calls[0][0].include).toHaveProperty('assignments')
     })
 
     it('handles project with null description', async () => {
       mockPrisma.project.findUnique.mockResolvedValue({ ...TEST_PROJECT, description: null })
 
-      const res = await request(app).get('/project/1')
+      const res = await request(app)
+        .get('/project/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.description).toBeNull()
+    })
+
+    it('returns 403 when a student is not assigned to the project', async () => {
+      // assignment.findUnique resolves to null by default
+
+      const res = await request(app).get('/project/1')
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/assigned/i)
+      expect(mockPrisma.project.findUnique).not.toHaveBeenCalled()
+    })
+
+    it('lets an assigned student view the project without other students\' info', async () => {
+      mockPrisma.assignment.findUnique.mockResolvedValue({ id: 1, student_id: 1, project_id: 1 })
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+
+      const res = await request(app).get('/project/1')
+      expect(res.status).toBe(200)
+      expect(res.body.id).toBe(1)
+      // Students must not see other students' info - no assignments in the payload
+      expect(res.body).not.toHaveProperty('assignments')
+      // ...and the query itself does not request them
+      expect(mockPrisma.project.findUnique.mock.calls[0][0].include).not.toHaveProperty('assignments')
     })
 
     it('returns 500 on database error', async () => {
       mockPrisma.project.findUnique.mockRejectedValue(new Error('DB down'))
 
-      const res = await request(app).get('/project/1')
+      const res = await request(app)
+        .get('/project/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to retrieve project' })
     })
@@ -196,9 +299,19 @@ describe('Project API Routes', () => {
 
   // ---- POST /create ----
   describe('POST /project/create', () => {
+    it('returns 403 for students', async () => {
+      const res = await request(app)
+        .post('/project/create')
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/students/i)
+      expect(mockPrisma.project.create).not.toHaveBeenCalled()
+    })
+
     it('returns 400 when required fields are missing', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ title: 'Only Title' })
       expect(res.status).toBe(400)
       expect(res.body.error).toMatch(/missing|required/i)
@@ -207,6 +320,7 @@ describe('Project API Routes', () => {
     it('returns 400 when offering_id is missing', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ title: 'New Project', description: 'A desc' })
       expect(res.status).toBe(400)
     })
@@ -214,6 +328,7 @@ describe('Project API Routes', () => {
     it('returns 400 when title is missing', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, description: 'A desc' })
       expect(res.status).toBe(400)
     })
@@ -221,6 +336,7 @@ describe('Project API Routes', () => {
     it('returns 400 when slug is missing', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project' })
       expect(res.status).toBe(400)
     })
@@ -228,6 +344,7 @@ describe('Project API Routes', () => {
     it('returns 400 when slug contains spaces', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new project' })
       expect(res.status).toBe(400)
       expect(res.body.error).toMatch(/invalid slug/i)
@@ -236,6 +353,7 @@ describe('Project API Routes', () => {
     it('returns 400 when slug contains non-latin characters', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'nuevo-proyectó' })
       expect(res.status).toBe(400)
     })
@@ -243,6 +361,7 @@ describe('Project API Routes', () => {
     it('returns 400 when slug contains special characters', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new/project!' })
       expect(res.status).toBe(400)
     })
@@ -250,6 +369,7 @@ describe('Project API Routes', () => {
     it('returns 400 when slug contains uppercase letters', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'New-Project' })
       expect(res.status).toBe(400)
     })
@@ -257,6 +377,7 @@ describe('Project API Routes', () => {
     it('returns 400 when slug has leading or trailing hyphens', async () => {
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: '-new-project-' })
       expect(res.status).toBe(400)
     })
@@ -266,6 +387,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'bad slug' })
       expect(res.status).toBe(400)
       expect(mockPrisma.project.create).not.toHaveBeenCalled()
@@ -276,21 +398,46 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 999, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(404)
       expect(res.body.error).toMatch(/offering/i)
     })
 
-    it('creates a project successfully with title and offering_id', async () => {
+    it('creates a project successfully with title and offering_id (admin)', async () => {
       mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
       mockPrisma.project.create.mockResolvedValue({ ...TEST_PROJECT, title: 'New Project' })
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(201)
       expect(res.body.id).toBe(1)
       expect(res.body.title).toBe('New Project')
+    })
+
+    it('lets a teacher create a project in an offering they teach', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teacher_id: 20 })
+      mockPrisma.project.create.mockResolvedValue({ ...TEST_PROJECT, title: 'New Project' })
+
+      const res = await request(app)
+        .post('/project/create')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
+      expect(res.status).toBe(201)
+    })
+
+    it('returns 403 when a teacher creates a project in an offering they do not teach', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher_id 1, not sub 20
+
+      const res = await request(app)
+        .post('/project/create')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/only create projects in classes they teach/i)
+      expect(mockPrisma.project.create).not.toHaveBeenCalled()
     })
 
     it('creates a project with git_url', async () => {
@@ -300,6 +447,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new-project', git_url: 'https://github.com/example/my-repo.git' })
       expect(res.status).toBe(201)
       expect(res.body.git_url).toBe('https://github.com/example/my-repo.git')
@@ -312,6 +460,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new-project', subversion_url: 'https://svn.example.com/repos/my-repo' })
       expect(res.status).toBe(201)
       expect(res.body.subversion_url).toBe('https://svn.example.com/repos/my-repo')
@@ -324,6 +473,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new-project', description: 'Detailed description here' })
       expect(res.status).toBe(201)
       expect(res.body.description).toBe('Detailed description here')
@@ -335,6 +485,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'Minimal Project', slug: 'minimal-project' })
       expect(res.status).toBe(201)
     })
@@ -344,6 +495,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(500)
       expect(res.body.error).toMatch(/fail/i)
@@ -355,6 +507,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(500)
       expect(res.body.error).toMatch(/fail/i)
@@ -363,9 +516,19 @@ describe('Project API Routes', () => {
 
   // ---- POST /update/:id ----
   describe('POST /project/update/:id', () => {
+    it('returns 403 for students', async () => {
+      const res = await request(app)
+        .post('/project/update/1')
+        .send({ title: 'x' })
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/students/i)
+      expect(mockPrisma.project.update).not.toHaveBeenCalled()
+    })
+
     it('returns 400 for non-numeric ID', async () => {
       const res = await request(app)
         .post('/project/update/abc')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({})
       expect(res.status).toBe(400)
       expect(res.body).toEqual({ error: 'Invalid project ID' })
@@ -376,6 +539,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({})
       expect(res.status).toBe(400)
       expect(res.body).toEqual({ error: 'No update fields provided' })
@@ -386,20 +550,63 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/999')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ title: 'Updated' })
       expect(res.status).toBe(404)
       expect(res.body).toEqual({ error: 'Project not found' })
     })
 
-    it('updates title successfully', async () => {
+    it('updates title successfully (admin)', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
       mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, title: 'Updated Title' })
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ title: 'Updated Title' })
       expect(res.status).toBe(200)
       expect(res.body.title).toBe('Updated Title')
+    })
+
+    it('lets a teacher update a project in an offering they teach', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teacher_id: 20 })
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, title: 'Updated Title' })
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ title: 'Updated Title' })
+      expect(res.status).toBe(200)
+    })
+
+    it('returns 403 when a teacher updates a project in an offering they do not teach', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher_id 1, not sub 20
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ title: 'Updated Title' })
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/only update projects in classes they teach/i)
+      expect(mockPrisma.project.update).not.toHaveBeenCalled()
+    })
+
+    it('returns 403 when a teacher moves a project into an offering they do not teach', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      // Current offering is theirs; the target offering is not
+      mockPrisma.offering.findUnique
+        .mockResolvedValueOnce({ ...TEST_OFFERING, teacher_id: 20 })
+        .mockResolvedValue({ ...TEST_OFFERING, id: 2, teacher_id: 99 })
+
+      const res = await request(app)
+        .post('/project/update/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ offering_id: 2 })
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/only update projects in classes they teach/i)
+      expect(mockPrisma.project.update).not.toHaveBeenCalled()
     })
 
     it('updates description successfully', async () => {
@@ -408,6 +615,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ description: 'New description' })
       expect(res.status).toBe(200)
       expect(res.body.description).toBe('New description')
@@ -419,6 +627,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ slug: 'renamed-project' })
       expect(res.status).toBe(200)
       expect(res.body.slug).toBe('renamed-project')
@@ -427,6 +636,7 @@ describe('Project API Routes', () => {
     it('returns 400 when updating slug with spaces', async () => {
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ slug: 'renamed project' })
       expect(res.status).toBe(400)
       expect(res.body.error).toMatch(/invalid slug/i)
@@ -435,6 +645,7 @@ describe('Project API Routes', () => {
     it('returns 400 when updating slug with non-latin characters', async () => {
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ slug: 'проект' })
       expect(res.status).toBe(400)
     })
@@ -442,6 +653,7 @@ describe('Project API Routes', () => {
     it('returns 400 when updating slug with special characters', async () => {
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ slug: 'a_b/c' })
       expect(res.status).toBe(400)
     })
@@ -451,6 +663,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ slug: 'bad slug' })
       expect(res.status).toBe(400)
       expect(mockPrisma.project.update).not.toHaveBeenCalled()
@@ -462,6 +675,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ git_url: 'https://gitlab.com/example/new-repo.git' })
       expect(res.status).toBe(200)
       expect(res.body.git_url).toBe('https://gitlab.com/example/new-repo.git')
@@ -473,6 +687,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ subversion_url: 'https://svn.example.com/repos/new-repo' })
       expect(res.status).toBe(200)
       expect(res.body.subversion_url).toBe('https://svn.example.com/repos/new-repo')
@@ -484,18 +699,20 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ git_url: '' })
       expect(res.status).toBe(200)
       expect(res.body.git_url).toBeNull()
     })
 
-    it('updates offering_id successfully after validating the new offering exists', async () => {
+    it('updates offering_id successfully after validating the new offering exists (admin)', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
       mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, id: 2 })
       mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, offering_id: 2 })
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 2 })
       expect(res.status).toBe(200)
       expect(res.body.offering_id).toBe(2)
@@ -507,6 +724,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 999 })
       expect(res.status).toBe(404)
       expect(res.body.error).toMatch(/offering/i)
@@ -520,6 +738,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ title: 'Renamed Project', description: 'Updated notes' })
       expect(res.status).toBe(200)
       expect(res.body.title).toBe('Renamed Project')
@@ -531,6 +750,7 @@ describe('Project API Routes', () => {
 
       const res = await request(app)
         .post('/project/update/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ title: 'x' })
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to update project' })
@@ -539,8 +759,17 @@ describe('Project API Routes', () => {
 
   // ---- DELETE /:id ----
   describe('DELETE /project/:id', () => {
+    it('returns 403 for students', async () => {
+      const res = await request(app).delete('/project/1')
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/students/i)
+      expect(mockPrisma.project.delete).not.toHaveBeenCalled()
+    })
+
     it('returns 400 for non-numeric ID', async () => {
-      const res = await request(app).delete('/project/abc')
+      const res = await request(app)
+        .delete('/project/abc')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(400)
       expect(res.body).toEqual({ error: 'Invalid project ID' })
     })
@@ -548,18 +777,49 @@ describe('Project API Routes', () => {
     it('returns 404 when project does not exist', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(null)
 
-      const res = await request(app).delete('/project/999')
+      const res = await request(app)
+        .delete('/project/999')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(404)
       expect(res.body).toEqual({ error: 'Project not found' })
     })
 
-    it('deletes a project successfully', async () => {
+    it('deletes a project successfully (admin)', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
       mockPrisma.project.delete.mockResolvedValue(TEST_PROJECT)
 
-      const res = await request(app).delete('/project/1')
+      const res = await request(app)
+        .delete('/project/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.message).toMatch(/delet/i)
+    })
+
+    it('lets a teacher delete a project in an offering they teach', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teacher_id: 20 })
+      mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 1 })
+      mockPrisma.project.delete.mockResolvedValue(TEST_PROJECT)
+
+      const res = await request(app)
+        .delete('/project/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+      expect(res.status).toBe(200)
+      expect(mockPrisma.project.delete).toHaveBeenCalledWith({ where: { id: 1 } })
+    })
+
+    it('returns 403 when a teacher deletes a project in an offering they do not teach', async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher_id 1, not sub 20
+
+      const res = await request(app)
+        .delete('/project/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+      expect(res.status).toBe(403)
+      expect(res.body.error).toMatch(/only delete projects in classes they teach/i)
+      // Nothing is touched when the teacher does not own the offering
+      expect(mockPrisma.assignment.deleteMany).not.toHaveBeenCalled()
+      expect(mockPrisma.project.delete).not.toHaveBeenCalled()
     })
 
     it('cascades deletion of associated assignments', async () => {
@@ -567,7 +827,9 @@ describe('Project API Routes', () => {
       mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 3 })
       mockPrisma.project.delete.mockResolvedValue(TEST_PROJECT)
 
-      const res = await request(app).delete('/project/1')
+      const res = await request(app)
+        .delete('/project/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(mockPrisma.assignment.deleteMany).toHaveBeenCalled()
     })
@@ -575,7 +837,9 @@ describe('Project API Routes', () => {
     it('returns 500 on database error during lookup', async () => {
       mockPrisma.project.findUnique.mockRejectedValue(new Error('DB down'))
 
-      const res = await request(app).delete('/project/1')
+      const res = await request(app)
+        .delete('/project/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to delete project' })
     })
@@ -585,7 +849,9 @@ describe('Project API Routes', () => {
       mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 0 })
       mockPrisma.project.delete.mockRejectedValue(new Error('DB down'))
 
-      const res = await request(app).delete('/project/1')
+      const res = await request(app)
+        .delete('/project/1')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to delete project' })
     })
@@ -593,7 +859,7 @@ describe('Project API Routes', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Authentication â€” every route on this router requires a valid session token
+// Authentication — every route on this router requires a valid session token
 // ---------------------------------------------------------------------------
 describe('Authentication', () => {
   let app
