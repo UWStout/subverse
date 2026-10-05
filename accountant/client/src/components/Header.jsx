@@ -6,7 +6,10 @@ import ThemeToggle from './ThemeToggle'
 const NAV_LINKS = [
   { label: 'Users', to: '/users' },
   // Offerings is available to every role except students
-  { label: 'Offerings', to: '/offerings', exceptRoles: ['STUDENT'] }
+  { label: 'Offerings', to: '/offerings', exceptRoles: ['STUDENT'] },
+  // Projects is visible to every role; students get a read-only view of
+  // their assigned projects (the server restricts what they can see)
+  { label: 'Projects', to: '/projects' }
 ]
 
 /**

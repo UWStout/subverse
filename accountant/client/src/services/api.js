@@ -203,6 +203,85 @@ export async function deleteOffering (id) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Projects                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GET /project/list/:class/:term
+ * `class` is a subject-number code (e.g. 'CS-101') and `term` a term value
+ * (e.g. 'FALL2025'); each position accepts '*' for "any", but at least one
+ * must be concrete or the server returns 400.
+ * Query params: ?page=N&limit=N  (defaults: page=1, limit=25)
+ * Returns { data, total, page, limit, totalPages } of plain project rows -
+ * no joined offering / class details (use the details route for those).
+ */
+export async function fetchProjects (classCode = '*', term = '*', page = 1, limit = 25) {
+  const res = await fetch(`${BASE}/project/list/${classCode}/${term}?page=${page}&limit=${limit}`, { headers: getAuthHeaders() })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to list projects' }))
+    throw new Error(err.error || 'Request failed')
+  }
+  return res.json()
+}
+
+/** POST /project/create */
+export async function createProject ({ offeringId, title, slug, subversionUrl, gitUrl, description }) {
+  const res = await fetch(`${BASE}/project/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({
+      offering_id: offeringId,
+      title,
+      slug,
+      subversion_url: subversionUrl ?? null,
+      git_url: gitUrl ?? null,
+      description: description ?? null
+    })
+  })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to create project' }))
+    throw new Error(err.error || 'Request failed')
+  }
+  return res.json() // the created project
+}
+
+/** POST /project/update/:id - only fields that are defined are sent (partial update). */
+export async function updateProject (id, { offeringId, title, slug, subversionUrl, gitUrl, description }) {
+  const payload = {}
+  if (offeringId !== undefined) payload.offering_id = offeringId
+  if (title !== undefined) payload.title = title
+  if (slug !== undefined) payload.slug = slug
+  if (subversionUrl !== undefined) payload.subversion_url = subversionUrl
+  if (gitUrl !== undefined) payload.git_url = gitUrl
+  if (description !== undefined) payload.description = description
+
+  const res = await fetch(`${BASE}/project/update/${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to update project' }))
+    throw new Error(err.error || 'Request failed')
+  }
+  return res.json() // the updated project
+}
+
+/** DELETE /project/:id */
+export async function deleteProject (id) {
+  const res = await fetch(`${BASE}/project/${id}`, { method: 'DELETE', headers: getAuthHeaders() })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to delete project' }))
+    throw new Error(err.error || 'Request failed')
+  }
+  return res.json()
+}
+
+/* ------------------------------------------------------------------ */
 /*  Classes & Teachers (option lists for the offering form)            */
 /* ------------------------------------------------------------------ */
 

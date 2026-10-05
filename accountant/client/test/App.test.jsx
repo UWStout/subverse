@@ -7,7 +7,9 @@ import {
   fetchBootstrapStatus,
   fetchUsers,
   fetchOfferings,
-  fetchOfferingTerms
+  fetchOfferingTerms,
+  fetchClasses,
+  fetchProjects
 } from '../src/services/api'
 
 // Mock the whole API layer so the app boots without a network.
@@ -27,11 +29,16 @@ vi.mock('../src/services/api', () => ({
   createOffering: vi.fn(),
   updateOffering: vi.fn(),
   fetchClasses: vi.fn(),
-  fetchTeachers: vi.fn()
+  fetchTeachers: vi.fn(),
+  fetchProjects: vi.fn(),
+  createProject: vi.fn(),
+  updateProject: vi.fn(),
+  deleteProject: vi.fn()
 }))
 
 const ADMIN = { id: 3, username: 'admin', type: 'ADMIN' }
 const TEACHER = { id: 1, username: 'prof', type: 'TEACHER' }
+const STUDENT = { id: 2, username: 'student', type: 'STUDENT' }
 
 /** Point the (real) BrowserRouter at a path before rendering. */
 function visit (path) {
@@ -48,6 +55,8 @@ describe('App', () => {
     fetchUsers.mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 })
     fetchOfferings.mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 })
     fetchOfferingTerms.mockResolvedValue([])
+    fetchClasses.mockResolvedValue({ data: [], total: 0, page: 1, limit: 100, totalPages: 0 })
+    fetchProjects.mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 })
   })
 
   it('redirects anonymous visitors to the login page', async () => {
@@ -84,5 +93,26 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByText('Class Offerings')).toBeInTheDocument()
+  })
+
+  it('shows the projects page for a student (read-only view)', async () => {
+    fetchCurrentUser.mockResolvedValue(STUDENT)
+
+    visit('/projects')
+    render(<App />)
+
+    expect(await screen.findByText('Class Projects')).toBeInTheDocument()
+    // Students get no create / edit / delete controls
+    expect(screen.queryByRole('button', { name: 'Add Project' })).not.toBeInTheDocument()
+  })
+
+  it('shows the projects page for a teacher with the add button', async () => {
+    fetchCurrentUser.mockResolvedValue(TEACHER)
+
+    visit('/projects')
+    render(<App />)
+
+    expect(await screen.findByText('Class Projects')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Project' })).toBeInTheDocument()
   })
 })

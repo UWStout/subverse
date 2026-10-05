@@ -11,6 +11,10 @@ import {
   createOffering,
   updateOffering,
   deleteOffering,
+  fetchProjects,
+  createProject,
+  updateProject,
+  deleteProject,
   createClass,
   fetchClasses,
   fetchTeachers,
@@ -328,6 +332,86 @@ describe('services/api', () => {
     })
   })
 
+  describe('fetchProjects', () => {
+    it('sends wildcard positions and pagination by default', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 }))
+
+      await fetchProjects()
+
+      expect(fetch).toHaveBeenCalledWith('/project/list/*/*?page=1&limit=25', { headers: {} })
+    })
+
+    it('sends the class code and term as URL positions when provided', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 3, limit: 10, totalPages: 3 }))
+
+      await fetchProjects('CS-101', 'FALL2025', 3, 10)
+
+      expect(fetch).toHaveBeenCalledWith('/project/list/CS-101/FALL2025?page=3&limit=10', { headers: {} })
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'At least one filter (class or term) is required' }, false))
+
+      await expect(fetchProjects()).rejects.toThrow(/at least one/i)
+    })
+  })
+
+  describe('createProject', () => {
+    it('posts the payload with snake_case fields', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ id: 1 }))
+
+      await createProject({ offeringId: 2, title: 'Final Project', slug: 'final-project', subversionUrl: null, gitUrl: 'https://git.example.com/x.git', description: 'Do it' })
+
+      expect(fetch).toHaveBeenCalledWith('/project/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offering_id: 2, title: 'Final Project', slug: 'final-project', subversion_url: null, git_url: 'https://git.example.com/x.git', description: 'Do it' })
+      })
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Invalid slug format, expected lowercase letters and numbers separated by single hyphens (e.g. final-project)' }, false))
+
+      await expect(createProject({ offeringId: 1, title: 'x', slug: 'Bad Slug' })).rejects.toThrow(/invalid slug/i)
+    })
+  })
+
+  describe('updateProject', () => {
+    it('only includes fields that are defined (partial update)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ id: 1 }))
+
+      await updateProject(1, { title: 'Renamed' })
+
+      expect(fetch).toHaveBeenCalledWith('/project/update/1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Renamed' })
+      })
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Teachers can only update projects in classes they teach' }, false))
+
+      await expect(updateProject(1, { title: 'x' })).rejects.toThrow(/only update projects/i)
+    })
+  })
+
+  describe('deleteProject', () => {
+    it('sends a DELETE request for the project id', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'Project deleted successfully' }))
+
+      await deleteProject(7)
+
+      expect(fetch).toHaveBeenCalledWith('/project/7', { method: 'DELETE', headers: {} })
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Failed to delete project' }, false))
+
+      await expect(deleteProject(7)).rejects.toThrow('Failed to delete project')
+    })
+  })
+
   describe('createClass', () => {
     it('posts the class fields and returns the created class', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ id: 10, subject: 'PHYS', number: '150', title: 'Physics I' }))
@@ -517,6 +601,30 @@ describe('services/api', () => {
       fetch.mockResolvedValueOnce(badJsonResponse())
 
       await expect(deleteOffering(1)).rejects.toThrow('Failed to delete offering')
+    })
+
+    it('fetchProjects falls back to its default message', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(fetchProjects()).rejects.toThrow('Failed to list projects')
+    })
+
+    it('createProject falls back to its default message', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(createProject({ offeringId: 1, title: 'x', slug: 'x' })).rejects.toThrow('Failed to create project')
+    })
+
+    it('updateProject falls back to its default message', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(updateProject(1, { title: 'x' })).rejects.toThrow('Failed to update project')
+    })
+
+    it('deleteProject falls back to its default message', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(deleteProject(1)).rejects.toThrow('Failed to delete project')
     })
 
     it('fetchClasses falls back to its default message', async () => {
