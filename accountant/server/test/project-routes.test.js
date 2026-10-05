@@ -30,10 +30,10 @@ describe('Project API Routes', () => {
     app = authedApp(rawApp)
   })
 
-  // ---- GET /:class/:term ----
-  describe('GET /project/:class/:term', () => {
+  // ---- GET /list/:class/:term ----
+  describe('GET /project/list/:class/:term', () => {
     it('returns 400 when both class and term are wildcards (no filter provided)', async () => {
-      const res = await request(app).get('/project/*/*')
+      const res = await request(app).get('/project/list/*/*')
       expect(res.status).toBe(400)
       expect(res.body.error).toMatch(/at least one/i)
     })
@@ -44,7 +44,7 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
-      const res = await request(app).get('/project/CS-101/*')
+      const res = await request(app).get('/project/list/CS-101/*')
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
       expect(res.body.total).toBe(1)
@@ -55,7 +55,7 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
-      const res = await request(app).get('/project/*/FALL2025')
+      const res = await request(app).get('/project/list/*/FALL2025')
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
       expect(res.body.total).toBe(1)
@@ -67,17 +67,30 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 2 } })
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT, { ...TEST_PROJECT, id: 2 }])
 
-      const res = await request(app).get('/project/CS-101/FALL2025')
+      const res = await request(app).get('/project/list/CS-101/FALL2025')
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
       expect(res.body.data).toHaveLength(2)
+    })
+
+    it('returns plain rows - foreign ids are not joined or expanded', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+      mockPrisma.offering.findMany.mockResolvedValue([TEST_OFFERING])
+      mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 1 } })
+      mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
+
+      const res = await request(app).get('/project/list/CS-101/FALL2025')
+      expect(res.status).toBe(200)
+      // offering_id stays a raw ID; the offering record is not embedded
+      expect(res.body.data[0].offering_id).toBe(TEST_OFFERING.id)
+      expect(res.body.data[0]).not.toHaveProperty('offering')
     })
 
     it('returns empty paginated response when no projects match the filters', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockResolvedValue([])
 
-      const res = await request(app).get('/project/CS-101/FALL2025')
+      const res = await request(app).get('/project/list/CS-101/FALL2025')
       expect(res.status).toBe(200)
       expect(res.body.data).toEqual([])
       expect(res.body.total).toBe(0)
@@ -89,20 +102,20 @@ describe('Project API Routes', () => {
       mockPrisma.project.aggregate.mockResolvedValue({ _count: { _all: 120 } })
       mockPrisma.project.findMany.mockResolvedValue(Array.from({ length: 100 }, (_, i) => ({ ...TEST_PROJECT, id: i + 1 })))
 
-      const res = await request(app).get('/project/CS-101/FALL2025?limit=200')
+      const res = await request(app).get('/project/list/CS-101/FALL2025?limit=200')
       expect(res.status).toBe(200)
       expect(res.body.limit).toBe(100) // capped from 200 to maxLimit
     })
 
     it('returns 400 for invalid class code format', async () => {
-      const res = await request(app).get('/project/not-a-valid-code/FALL2025')
+      const res = await request(app).get('/project/list/not-a-valid-code/FALL2025')
       expect(res.status).toBe(400)
     })
 
     it('returns 404 when class is not found', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(null)
 
-      const res = await request(app).get('/project/XX-999/FALL2025')
+      const res = await request(app).get('/project/list/XX-999/FALL2025')
       expect(res.status).toBe(404)
       expect(res.body.error).toMatch(/class/i)
     })
@@ -111,7 +124,7 @@ describe('Project API Routes', () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockRejectedValue(new Error('DB down'))
 
-      const res = await request(app).get('/project/CS-101/FALL2025')
+      const res = await request(app).get('/project/list/CS-101/FALL2025')
       expect(res.status).toBe(500)
       expect(res.body.error).toMatch(/fail/i)
     })
@@ -593,14 +606,14 @@ describe('Authentication', () => {
   })
 
   it('returns 401 when no token is provided', async () => {
-    const res = await request(app).get('/project/*/FALL2025')
+    const res = await request(app).get('/project/list/*/FALL2025')
     expect(res.status).toBe(401)
     expect(res.body.error).toMatch(/authorization/i)
   })
 
   it('returns 401 for a malformed Authorization header', async () => {
     const res = await request(app)
-      .get('/project/*/FALL2025')
+      .get('/project/list/*/FALL2025')
       .set('Authorization', 'Token abc123')
     expect(res.status).toBe(401)
   })
@@ -608,7 +621,7 @@ describe('Authentication', () => {
   it('returns 401 for a token signed with the wrong secret', async () => {
     const badToken = jwt.sign({ sub: 1, username: 'testuser' }, 'wrong-secret', { expiresIn: '8h' })
     const res = await request(app)
-      .get('/project/*/FALL2025')
+      .get('/project/list/*/FALL2025')
       .set('Authorization', `Bearer ${badToken}`)
     expect(res.status).toBe(401)
   })

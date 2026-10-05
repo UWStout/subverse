@@ -203,11 +203,13 @@ export function makeToken ({ sub = TEST_USER.id, username = 'testuser', type = '
  * Wrap an Express app so every request it receives carries a valid session
  * token - simulates an authenticated client. Requests that already carry an
  * Authorization header are left untouched (used by the 401 tests).
+ * Pass a custom token to change the default identity (defaults to AUTH_TOKEN,
+ * which is a STUDENT).
  */
-export function authedApp (app) {
+export function authedApp (app, token = AUTH_TOKEN) {
   return (req, res) => {
     if (!req.headers.authorization) {
-      req.headers.authorization = `Bearer ${AUTH_TOKEN}`
+      req.headers.authorization = `Bearer ${token}`
     }
     return app(req, res)
   }

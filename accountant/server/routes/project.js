@@ -64,6 +64,11 @@ function isValidSlug (slug) {
 // Create Project post route
 projectRouter.post('/create', async (req, res) => {
   try {
+    // Students cannot create projects
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot create projects' })
+    }
+
     const { offering_id, title, slug, subversion_url, git_url, description } = req.body
 
     // Validate required fields
@@ -80,6 +85,11 @@ projectRouter.post('/create', async (req, res) => {
     const offering = await getDb().offering.findUnique({ where: { id: parseInt(offering_id, 10) } })
     if (!offering) {
       return res.status(404).json({ error: 'Offering not found' })
+    }
+
+    // Teachers may only create projects in offerings they teach
+    if (req.user.type === 'TEACHER' && offering.teacher_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Teachers can only create projects in classes they teach' })
     }
 
     const project = await getDb().project.create({
@@ -103,6 +113,11 @@ projectRouter.post('/create', async (req, res) => {
 // Update Project post route
 projectRouter.post('/update/:id', async (req, res) => {
   try {
+    // Students cannot update projects
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot update projects' })
+    }
+
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid project ID' })
@@ -126,11 +141,23 @@ projectRouter.post('/update/:id', async (req, res) => {
       return res.status(404).json({ error: 'Project not found' })
     }
 
+    // Teachers may only update projects that belong to offerings they teach
+    if (req.user.type === 'TEACHER') {
+      const currentOffering = await getDb().offering.findUnique({ where: { id: existing.offering_id } })
+      if (!currentOffering || currentOffering.teacher_id !== req.user.sub) {
+        return res.status(403).json({ error: 'Teachers can only update projects in classes they teach' })
+      }
+    }
+
     // Validate new offering_id if it is being changed
     if (offering_id !== undefined) {
       const newOffering = await getDb().offering.findUnique({ where: { id: parseInt(offering_id, 10) } })
       if (!newOffering) {
         return res.status(404).json({ error: 'Offering not found' })
+      }
+      // A teacher may only move a project into one of their own offerings
+      if (req.user.type === 'TEACHER' && newOffering.teacher_id !== req.user.sub) {
+        return res.status(403).json({ error: 'Teachers can only update projects in classes they teach' })
       }
     }
 
@@ -153,8 +180,11 @@ projectRouter.post('/update/:id', async (req, res) => {
   }
 })
 
-// Get list of projects optionally filtered by class offering (subject-number) and/or term
-projectRouter.get('/:class/:term', async (req, res) => {
+// Get list of projects with server-side pagination.
+// Filters are positional URL params; '*' means "any" for that position:
+//   GET /project/list/:class/:term
+// Only pagination (?page=N&limit=N) is passed as query params.
+projectRouter.get('/list/:class/:term', async (req, res) => {
   try {
     const { class: classCode, term } = req.params
 
@@ -198,7 +228,21 @@ projectRouter.get('/:class/:term', async (req, res) => {
     const offeringIds = offerings.map(o => o.id)
     const where = { offering_id: { in: offeringIds } }
 
-    // Fetch projects and count in parallel
+    // Students may only see projects they are assigned to
+    if (req.user.type === 'STUDENT') {
+      const assignments = await getDb().assignment.findMany({
+        where: { student_id: req.user.sub },
+        select: { project_id: true }
+      })
+      const assignedIds = assignments.map(a => a.project_id)
+      if (assignedIds.length === 0) {
+        return res.json({ data: [], total: 0, page, limit: take, totalPages: 0 })
+      }
+      where.id = { in: assignedIds }
+    }
+
+    // Plain rows only - no joins / expansions. Foreign keys stay as IDs;
+    // expanded info (offering, class and teacher details) lives on GET /project/:id.
     const [projects, agg] = await Promise.all([
       getDb().project.findMany({
         where,
@@ -227,6 +271,19 @@ projectRouter.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid project ID' })
     }
 
+    // Students may only view projects they are assigned to
+    if (req.user.type === 'STUDENT') {
+      const assignment = await getDb().assignment.findUnique({
+        where: { student_id_project_id: { student_id: req.user.sub, project_id: id } }
+      })
+      if (!assignment) {
+        return res.status(403).json({ error: 'Students can only view projects they are assigned to' })
+      }
+    }
+
+    const isStudent = req.user.type === 'STUDENT'
+
+    // Students must not see other students' info - omit assignments for them
     const project = await getDb().project.findUnique({
       where: { id },
       include: {
@@ -236,11 +293,16 @@ projectRouter.get('/:id', async (req, res) => {
             teacher: { select: { id: true, username: true, email: true } }
           }
         },
-        assignments: {
-          include: {
-            student: { select: { id: true, username: true, email: true } }
+        ...(isStudent
+          ? {}
+          : {
+            assignments: {
+              include: {
+                student: { select: { id: true, username: true, email: true } }
+              }
+            }
           }
-        }
+        )
       }
     })
 
@@ -258,6 +320,11 @@ projectRouter.get('/:id', async (req, res) => {
 // Delete project route
 projectRouter.delete('/:id', async (req, res) => {
   try {
+    // Students cannot delete projects
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot delete projects' })
+    }
+
     const id = parseInt(req.params.id, 10)
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid project ID' })
@@ -267,6 +334,14 @@ projectRouter.delete('/:id', async (req, res) => {
     const existing = await getDb().project.findUnique({ where: { id } })
     if (!existing) {
       return res.status(404).json({ error: 'Project not found' })
+    }
+
+    // Teachers may only delete projects that belong to offerings they teach
+    if (req.user.type === 'TEACHER') {
+      const offering = await getDb().offering.findUnique({ where: { id: existing.offering_id } })
+      if (!offering || offering.teacher_id !== req.user.sub) {
+        return res.status(403).json({ error: 'Teachers can only delete projects in classes they teach' })
+      }
     }
 
     // Delete associated assignments (cascade on project delete handles this,

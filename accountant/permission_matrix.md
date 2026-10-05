@@ -49,3 +49,16 @@ The different user accounts have the following permission restrictions:
 | `DELETE /offering/:id`| ❌ 403 | ⚠️ (with themselves as teacher) | ✅ |
 
 So anyone can get the list of terms. Students can only list the offerings of get details for classes where they have assignments (they cannot create, update, or delete). Teachers can only list, get details, create, update, or delete their OWN classes. Admins can do everything.
+
+### Project Routes
+The different user accounts have the following permission restrictions:
+
+| Route | STUDENT | TEACHER  | ADMIN |
+|-------|---------|----------|-------|
+| `GET /project/list/` | ⚠️ (only for assigned projects) | ✅ | ✅ |
+| `GET /project/:id`| ⚠️ (only for assigned projects; no student details) | ✅ | ✅ |
+| `POST /project/create`| ❌ 403 | ⚠️ (only in classes they teach) | ✅ |
+| `POST /project/update/:id` | ❌ 403 | ⚠️ (only in classes they teach) | ✅ |
+| `DELETE /project/:id`| ❌ 403 | ⚠️ (only in classes they teach) | ✅ |
+
+Students can only read projects and only ones that they are assigned to. When using the details route, students should NOT see other student info so assignments should not be included. Teachers can read any projects but only create, update, or delete ones that are part of their offerings. Admins have all permissions.
