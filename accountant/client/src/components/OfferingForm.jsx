@@ -20,6 +20,13 @@ import {
 } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { createOffering, updateOffering, fetchClasses, fetchTeachers, createClass } from '../services/api'
+import {
+  validateClassSubject,
+  validateClassNumber,
+  validateTerm,
+  validateSection,
+  validationRules
+} from '../../../shared/validate.js'
 
 /** Sentinel value for the "create a new class" option in the class select. */
 const NEW_CLASS_VALUE = '__new_class__'
@@ -111,16 +118,43 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
     if (!classId) {
       errs.classId = 'Class is required'
     } else if (classId === NEW_CLASS_VALUE) {
-      // "New Class" selected - the inline fields must be filled in
-      if (!newClassSubject.trim()) errs.newClassSubject = 'Subject is required'
-      if (!newClassNumber.trim()) errs.newClassNumber = 'Number is required'
+      // "New Class" selected - the inline fields must be filled in and match
+      // the university patterns (config/validation-rules.js)
+      if (!newClassSubject.trim()) {
+        errs.newClassSubject = 'Subject is required'
+      } else {
+        const err = validateClassSubject(newClassSubject.trim())
+        if (err) errs.newClassSubject = err
+      }
+      if (!newClassNumber.trim()) {
+        errs.newClassNumber = 'Number is required'
+      } else {
+        const err = validateClassNumber(newClassNumber.trim())
+        if (err) errs.newClassNumber = err
+      }
       if (!newClassTitle.trim()) errs.newClassTitle = 'Title is required'
     }
     if (!teacherId) errs.teacherId = 'Teacher is required'
-    if (!term.trim()) errs.term = 'Term is required'
-    if (!section.trim()) errs.section = 'Section is required'
+    if (!term.trim()) {
+      errs.term = 'Term is required'
+    } else {
+      const err = validateTerm(term.trim())
+      if (err) errs.term = err
+    }
+    if (!section.trim()) {
+      errs.section = 'Section is required'
+    } else {
+      const err = validateSection(section.trim())
+      if (err) errs.section = err
+    }
     setErrors(errs)
     return Object.keys(errs).length === 0
+  }
+
+  /** First example from the rules file, used as an inline format hint. */
+  function exampleFor (key) {
+    const rule = validationRules[key]
+    return rule && rule.examples?.[0] ? `e.g. ${rule.examples[0]}` : ''
   }
 
   /* ---- Submit handler ---- */
@@ -215,7 +249,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
                     value={newClassSubject}
                     onChange={e => setNewClassSubject(e.target.value)}
                     error={!!errors.newClassSubject}
-                    helperText={errors.newClassSubject}
+                    helperText={errors.newClassSubject || exampleFor('classSubject')}
                     fullWidth
                     disabled={loading}
                   />
@@ -225,7 +259,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
                     value={newClassNumber}
                     onChange={e => setNewClassNumber(e.target.value)}
                     error={!!errors.newClassNumber}
-                    helperText={errors.newClassNumber}
+                    helperText={errors.newClassNumber || exampleFor('classNumber')}
                     fullWidth
                     disabled={loading}
                   />
@@ -272,7 +306,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
               value={term}
               onChange={e => setTerm(e.target.value)}
               error={!!errors.term}
-              helperText={errors.term}
+              helperText={errors.term || exampleFor('offeringTerm')}
               fullWidth
               disabled={loading}
             />
@@ -282,7 +316,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
               value={section}
               onChange={e => setSection(e.target.value)}
               error={!!errors.section}
-              helperText={errors.section}
+              helperText={errors.section || exampleFor('offeringSection')}
               fullWidth
               disabled={loading}
             />

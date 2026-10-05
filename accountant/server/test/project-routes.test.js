@@ -79,7 +79,7 @@ describe('Project API Routes', () => {
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
       const res = await request(app)
-        .get('/project/list/*/FALL2025')
+        .get('/project/list/*/FALL25')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
@@ -93,7 +93,7 @@ describe('Project API Routes', () => {
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT, { ...TEST_PROJECT, id: 2 }])
 
       const res = await request(app)
-        .get('/project/list/CS-101/FALL2025')
+        .get('/project/list/CS-101/FALL25')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(Array.isArray(res.body.data)).toBe(true)
@@ -107,7 +107,7 @@ describe('Project API Routes', () => {
       mockPrisma.project.findMany.mockResolvedValue([TEST_PROJECT])
 
       const res = await request(app)
-        .get('/project/list/CS-101/FALL2025')
+        .get('/project/list/CS-101/FALL25')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       // offering_id stays a raw ID; the offering record is not embedded
@@ -120,7 +120,7 @@ describe('Project API Routes', () => {
       mockPrisma.offering.findMany.mockResolvedValue([])
 
       const res = await request(app)
-        .get('/project/list/CS-101/FALL2025')
+        .get('/project/list/CS-101/FALL25')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.data).toEqual([])
@@ -134,7 +134,7 @@ describe('Project API Routes', () => {
       mockPrisma.project.findMany.mockResolvedValue(Array.from({ length: 100 }, (_, i) => ({ ...TEST_PROJECT, id: i + 1 })))
 
       const res = await request(app)
-        .get('/project/list/CS-101/FALL2025?limit=200')
+        .get('/project/list/CS-101/FALL25?limit=200')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.limit).toBe(100) // capped from 200 to maxLimit
@@ -177,14 +177,14 @@ describe('Project API Routes', () => {
     })
 
     it('returns 400 for invalid class code format', async () => {
-      const res = await request(app).get('/project/list/not-a-valid-code/FALL2025')
+      const res = await request(app).get('/project/list/not-a-valid-code/FALL25')
       expect(res.status).toBe(400)
     })
 
     it('returns 404 when class is not found', async () => {
       mockPrisma.class.findUnique.mockResolvedValue(null)
 
-      const res = await request(app).get('/project/list/XX-999/FALL2025')
+      const res = await request(app).get('/project/list/XX-999/FALL25')
       expect(res.status).toBe(404)
       expect(res.body.error).toMatch(/class/i)
     })
@@ -193,7 +193,7 @@ describe('Project API Routes', () => {
       mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
       mockPrisma.offering.findMany.mockRejectedValue(new Error('DB down'))
 
-      const res = await request(app).get('/project/list/CS-101/FALL2025')
+      const res = await request(app).get('/project/list/CS-101/FALL25')
       expect(res.status).toBe(500)
       expect(res.body.error).toMatch(/fail/i)
     })
@@ -872,14 +872,14 @@ describe('Authentication', () => {
   })
 
   it('returns 401 when no token is provided', async () => {
-    const res = await request(app).get('/project/list/*/FALL2025')
+    const res = await request(app).get('/project/list/*/FALL25')
     expect(res.status).toBe(401)
     expect(res.body.error).toMatch(/authorization/i)
   })
 
   it('returns 401 for a malformed Authorization header', async () => {
     const res = await request(app)
-      .get('/project/list/*/FALL2025')
+      .get('/project/list/*/FALL25')
       .set('Authorization', 'Token abc123')
     expect(res.status).toBe(401)
   })
@@ -887,7 +887,7 @@ describe('Authentication', () => {
   it('returns 401 for a token signed with the wrong secret', async () => {
     const badToken = jwt.sign({ sub: 1, username: 'testuser' }, 'wrong-secret', { expiresIn: '8h' })
     const res = await request(app)
-      .get('/project/list/*/FALL2025')
+      .get('/project/list/*/FALL25')
       .set('Authorization', `Bearer ${badToken}`)
     expect(res.status).toBe(401)
   })

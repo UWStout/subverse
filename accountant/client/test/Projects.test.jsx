@@ -48,7 +48,7 @@ const PROJECT_1 = {
 
 // Reference-list rows used by the page to map offering_id / class_id → labels.
 const CLASS_1 = { id: 1, subject: 'CS', number: '101', title: 'Intro CS' }
-const OFFERING_1 = { id: 1, class_id: 1, teacher_id: 1, term: 'FALL2025', section: 'A' }
+const OFFERING_1 = { id: 1, class_id: 1, teacher_id: 1, term: 'FALL25', section: '101' }
 
 const LIST_RESPONSE = { data: [PROJECT_1], total: 1, page: 1, limit: 25, totalPages: 1 }
 
@@ -80,7 +80,7 @@ describe('Projects page', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     fetchProjects.mockResolvedValue(LIST_RESPONSE)
-    fetchOfferingTerms.mockResolvedValue(['FALL2025', 'SPRING2026'])
+    fetchOfferingTerms.mockResolvedValue(['FALL25', 'SPRING26'])
     deleteProject.mockResolvedValue({ message: 'Project deleted successfully' })
     createProject.mockResolvedValue(PROJECT_1)
     updateProject.mockResolvedValue(PROJECT_1)
@@ -143,8 +143,8 @@ describe('Projects page', () => {
     // Both chip rows offer an "All" option plus the loaded values
     expect(screen.getAllByRole('button', { name: 'All' })).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'CS 101' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'FALL2025' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'SPRING2026' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'FALL25' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'SPRING26' })).toBeInTheDocument()
   })
 
   it('fetches projects when a class chip is selected', async () => {
@@ -160,9 +160,9 @@ describe('Projects page', () => {
     renderPage(ADMIN)
     await screen.findByText('Class Projects')
 
-    await user.click(screen.getByRole('button', { name: 'FALL2025' }))
+    await user.click(screen.getByRole('button', { name: 'FALL25' }))
 
-    expect(fetchProjects).toHaveBeenCalledWith('*', 'FALL2025', 1, 10)
+    expect(fetchProjects).toHaveBeenCalledWith('*', 'FALL25', 1, 10)
   })
 
   it('fetches with both filters when a class and a term are selected', async () => {
@@ -170,9 +170,9 @@ describe('Projects page', () => {
     await screen.findByText('Class Projects')
 
     await user.click(screen.getByRole('button', { name: 'CS 101' }))
-    await user.click(screen.getByRole('button', { name: 'SPRING2026' }))
+    await user.click(screen.getByRole('button', { name: 'SPRING26' }))
 
-    expect(fetchProjects).toHaveBeenLastCalledWith('CS-101', 'SPRING2026', 1, 10)
+    expect(fetchProjects).toHaveBeenLastCalledWith('CS-101', 'SPRING26', 1, 10)
   })
 
   it('renders projects with class and term labels mapped from the reference lists', async () => {
@@ -185,7 +185,7 @@ describe('Projects page', () => {
     const table = screen.getByRole('table')
     expect(within(table).getByText('Final Project')).toBeInTheDocument()
     expect(within(table).getByText('CS 101')).toBeInTheDocument()
-    expect(within(table).getByText('FALL2025')).toBeInTheDocument()
+    expect(within(table).getByText('FALL25')).toBeInTheDocument()
     expect(within(table).getByText('https://github.com/example/final-project.git')).toBeInTheDocument()
     // The reference lists are fetched once on mount (small, one page of 100)
     expect(fetchClasses).toHaveBeenCalledWith(1, 100)
@@ -200,7 +200,7 @@ describe('Projects page', () => {
 
     await screen.findByText('Class Projects')
     // The class chips are gone (their source failed), but the term chips work
-    await user.click(screen.getByRole('button', { name: 'FALL2025' }))
+    await user.click(screen.getByRole('button', { name: 'FALL25' }))
 
     // Project data is present in the table even though the label maps are empty
     const table = screen.getByRole('table')

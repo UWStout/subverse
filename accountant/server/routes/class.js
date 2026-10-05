@@ -1,6 +1,7 @@
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
 import { authenticate } from '../middleware/auth.js'
+import { validateClassSubject, validateClassNumber } from '../../shared/validate.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -130,6 +131,16 @@ classRouter.post('/create', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: subject, number, title' })
     }
 
+    // Validate field patterns (rules live in config/validation-rules.js)
+    const subjectError = validateClassSubject(subject)
+    if (subjectError) {
+      return res.status(400).json({ error: subjectError })
+    }
+    const numberError = validateClassNumber(number)
+    if (numberError) {
+      return res.status(400).json({ error: numberError })
+    }
+
     // Check for duplicate subject + number combination
     const existing = await getDb().class.findUnique({
       where: {
@@ -170,6 +181,13 @@ classRouter.post('/update/:id', async (req, res) => {
     // Validate that at least one field is provided
     if (!subject && !number && !title) {
       return res.status(400).json({ error: 'No update fields provided' })
+    }
+
+    // Validate patterns for any class fields being changed
+    const subjectError = subject !== undefined ? validateClassSubject(subject) : null
+    const numberError = number !== undefined ? validateClassNumber(number) : null
+    if (subjectError || numberError) {
+      return res.status(400).json({ error: subjectError || numberError })
     }
 
     // Check class exists

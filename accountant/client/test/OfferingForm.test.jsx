@@ -33,8 +33,8 @@ const OFFERING_1 = {
   id: 1,
   class_id: 1,
   teacher_id: 1,
-  term: 'FALL2025',
-  section: 'A',
+  term: 'FALL25',
+  section: '101',
   class: CLASSES[0],
   teacher: TEACHERS[0]
 }
@@ -123,8 +123,16 @@ describe('OfferingForm', () => {
     expect(createOffering).not.toHaveBeenCalled()
   })
 
-  it('creates an offering with the selected values', async () => {
-    const { onClose, onSubmit } = renderForm({ open: true })
+  it('shows format hints for term and section derived from the rules file', async () => {
+    renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    expect(screen.getByText('e.g. FALL25')).toBeInTheDocument()
+    expect(screen.getByText('e.g. 101')).toBeInTheDocument()
+  })
+
+  it('rejects terms and sections that do not match the university patterns', async () => {
+    renderForm({ open: true })
     await waitOptionsLoaded()
 
     await selectOption('Class', 'CS 101 – Intro CS')
@@ -134,11 +142,47 @@ describe('OfferingForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
+    expect(await screen.findByText(/Invalid term/)).toBeInTheDocument()
+    expect(screen.getByText(/Invalid section/)).toBeInTheDocument()
+    expect(createOffering).not.toHaveBeenCalled()
+  })
+
+  it('rejects new-class subjects and numbers that violate the patterns', async () => {
+    renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    await selectOption('Class', 'New Class')
+    await user.type(screen.getByLabelText('Subject'), 'cs')
+    await user.type(screen.getByLabelText('Number'), '11')
+    await user.type(screen.getByLabelText('Title'), 'Bad Class')
+    await selectOption('Teacher', 'prof')
+    await user.type(screen.getByLabelText('Term'), 'FALL25')
+    await user.type(screen.getByLabelText('Section'), '101')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText(/Invalid subject/)).toBeInTheDocument()
+    expect(screen.getByText(/Invalid class number/)).toBeInTheDocument()
+    expect(createClass).not.toHaveBeenCalled()
+    expect(createOffering).not.toHaveBeenCalled()
+  })
+
+  it('creates an offering with the selected values', async () => {
+    const { onClose, onSubmit } = renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    await selectOption('Class', 'CS 101 – Intro CS')
+    await selectOption('Teacher', 'prof')
+    await user.type(screen.getByLabelText('Term'), 'FALL25')
+    await user.type(screen.getByLabelText('Section'), '101')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
     expect(createOffering).toHaveBeenCalledWith({
       classId: 1,
       teacherId: 1,
-      term: 'FALL2025',
-      section: 'A'
+      term: 'FALL25',
+      section: '101'
     })
     // Success notifies the page and closes the dialog
     expect(onSubmit).toHaveBeenCalledTimes(1)
@@ -175,8 +219,8 @@ describe('OfferingForm', () => {
     await user.type(screen.getByLabelText('Number'), '150')
     await user.type(screen.getByLabelText('Title'), 'Physics I')
     await selectOption('Teacher', 'prof')
-    await user.type(screen.getByLabelText('Term'), 'FALL2025')
-    await user.type(screen.getByLabelText('Section'), 'A')
+    await user.type(screen.getByLabelText('Term'), 'FALL25')
+    await user.type(screen.getByLabelText('Section'), '101')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
@@ -185,8 +229,8 @@ describe('OfferingForm', () => {
     expect(createOffering).toHaveBeenCalledWith({
       classId: 10,
       teacherId: 1,
-      term: 'FALL2025',
-      section: 'A'
+      term: 'FALL25',
+      section: '101'
     })
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -198,8 +242,8 @@ describe('OfferingForm', () => {
 
     await selectOption('Class', 'New Class')
     await selectOption('Teacher', 'prof')
-    await user.type(screen.getByLabelText('Term'), 'FALL2025')
-    await user.type(screen.getByLabelText('Section'), 'A')
+    await user.type(screen.getByLabelText('Term'), 'FALL25')
+    await user.type(screen.getByLabelText('Section'), '101')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
@@ -225,8 +269,8 @@ describe('OfferingForm', () => {
     expect(updateOffering).toHaveBeenCalledWith(1, {
       classId: 10,
       teacherId: 1,
-      term: 'FALL2025',
-      section: 'A'
+      term: 'FALL25',
+      section: '101'
     })
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -240,8 +284,8 @@ describe('OfferingForm', () => {
 
     await selectOption('Class', 'CS 101 – Intro CS')
     await selectOption('Teacher', 'prof')
-    await user.type(screen.getByLabelText('Term'), 'FALL2025')
-    await user.type(screen.getByLabelText('Section'), 'A')
+    await user.type(screen.getByLabelText('Term'), 'FALL25')
+    await user.type(screen.getByLabelText('Section'), '101')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
@@ -255,8 +299,8 @@ describe('OfferingForm', () => {
 
     expect(await screen.findByText('Edit Offering')).toBeInTheDocument()
     // Term / section are available immediately
-    expect(screen.getByLabelText('Term')).toHaveValue('FALL2025')
-    expect(screen.getByLabelText('Section')).toHaveValue('A')
+    expect(screen.getByLabelText('Term')).toHaveValue('FALL25')
+    expect(screen.getByLabelText('Section')).toHaveValue('101')
     // The selects show their chosen values once the options have loaded
     expect(await screen.findByText('CS 101 – Intro CS')).toBeInTheDocument()
     expect(screen.getByText('prof')).toBeInTheDocument()
@@ -267,15 +311,15 @@ describe('OfferingForm', () => {
     await waitOptionsLoaded()
 
     await user.clear(screen.getByLabelText('Section'))
-    await user.type(screen.getByLabelText('Section'), 'B')
+    await user.type(screen.getByLabelText('Section'), '102')
 
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
     expect(updateOffering).toHaveBeenCalledWith(1, {
       classId: 1,
       teacherId: 1,
-      term: 'FALL2025',
-      section: 'B'
+      term: 'FALL25',
+      section: '102'
     })
     // Success notifies the page and closes the dialog
     expect(onSubmit).toHaveBeenCalledTimes(1)

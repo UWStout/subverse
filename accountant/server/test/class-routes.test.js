@@ -123,8 +123,8 @@ describe('Class API Routes', () => {
         offerings: [
           {
             id: 1,
-            term: 'FALL2025',
-            section: 'A',
+            term: 'FALL25',
+            section: '101',
             teacher: { id: 1, username: 'prof', email: 'prof@uni.edu' },
             projects: [{ id: 1, title: 'Final Project' }]
           }
@@ -166,6 +166,38 @@ describe('Class API Routes', () => {
         .send({ subject: 'CS' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('Missing required fields')
+    })
+
+    it('returns 400 when the subject violates the university pattern', async () => {
+      const res = await request(app)
+        .post('/class/create')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ subject: 'cs', number: '101', title: 'Bad Subject' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('subject')
+      expect(mockPrisma.class.create).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 when the class number violates the university pattern', async () => {
+      const res = await request(app)
+        .post('/class/create')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ subject: 'CS', number: '11', title: 'Bad Number' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('class number')
+      expect(mockPrisma.class.create).not.toHaveBeenCalled()
+    })
+
+    it('accepts a class number with a letter suffix (e.g. 101HON)', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(null)
+      mockPrisma.class.create.mockResolvedValue({ id: 2, subject: 'CS', number: '101HON', title: 'Honors CS' })
+
+      const res = await request(app)
+        .post('/class/create')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ subject: 'CS', number: '101HON', title: 'Honors CS' })
+      expect(res.status).toBe(201)
+      expect(mockPrisma.class.create).toHaveBeenCalledWith({ data: { subject: 'CS', number: '101HON', title: 'Honors CS' } })
     })
 
     it('returns 409 when subject+number combination already exists', async () => {
@@ -245,6 +277,26 @@ describe('Class API Routes', () => {
         .send({})
       expect(res.status).toBe(400)
       expect(res.body).toEqual({ error: 'No update fields provided' })
+    })
+
+    it('returns 400 when the new subject or number violates the university pattern', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(TEST_CLASS)
+
+      const badSubject = await request(app)
+        .post('/class/update/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ subject: 'cs' })
+      expect(badSubject.status).toBe(400)
+      expect(badSubject.body.error).toContain('subject')
+
+      const badNumber = await request(app)
+        .post('/class/update/1')
+        .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
+        .send({ number: '1011' })
+      expect(badNumber.status).toBe(400)
+      expect(badNumber.body.error).toContain('class number')
+
+      expect(mockPrisma.class.update).not.toHaveBeenCalled()
     })
 
     it('returns 404 when class does not exist', async () => {

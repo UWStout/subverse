@@ -40,8 +40,8 @@ const OFFERING_1 = {
   id: 1,
   class_id: 1,
   teacher_id: 1,
-  term: 'FALL2025',
-  section: 'A'
+  term: 'FALL25',
+  section: '101'
 }
 
 // Reference-list rows used by the page to map class_id / teacher_id → labels.
@@ -72,7 +72,7 @@ describe('Offerings page', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     fetchOfferings.mockResolvedValue(LIST_RESPONSE)
-    fetchOfferingTerms.mockResolvedValue(['FALL2025', 'SPRING2026'])
+    fetchOfferingTerms.mockResolvedValue(['FALL25', 'SPRING26'])
     deleteOffering.mockResolvedValue({ message: 'Offering deleted successfully' })
     createOffering.mockResolvedValue(OFFERING_1)
     updateOffering.mockResolvedValue(OFFERING_1)
@@ -119,7 +119,7 @@ describe('Offerings page', () => {
     const table = screen.getByRole('table')
     expect(within(table).getByText('CS 101')).toBeInTheDocument()
     expect(within(table).getByText('Intro CS')).toBeInTheDocument()
-    expect(within(table).getByText('FALL2025')).toBeInTheDocument()
+    expect(within(table).getByText('FALL25')).toBeInTheDocument()
     expect(within(table).getByText('prof')).toBeInTheDocument()
     // The reference lists are fetched once on mount (small, one page of 100)
     expect(fetchClasses).toHaveBeenCalledWith(1, 100)
@@ -134,8 +134,8 @@ describe('Offerings page', () => {
 
     // Offering data is present in the table even though the label maps are empty
     const table = screen.getByRole('table')
-    expect(await within(table).findByText('FALL2025')).toBeInTheDocument()
-    expect(within(table).getByText('A')).toBeInTheDocument()
+    expect(await within(table).findByText('FALL25')).toBeInTheDocument()
+    expect(within(table).getByText('101')).toBeInTheDocument()
   })
 
   it('fetches the default page with no term filter', async () => {
@@ -172,17 +172,17 @@ describe('Offerings page', () => {
 
     // MUI v9 renders clickable chips with role="button"
     expect(await screen.findByRole('button', { name: 'All' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'FALL2025' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'SPRING2026' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'FALL25' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'SPRING26' })).toBeInTheDocument()
   })
 
   it('refetches with the selected term when a chip is clicked', async () => {
     renderPage(TEACHER)
     await screen.findByText('Class Offerings')
 
-    await user.click(screen.getByRole('button', { name: 'SPRING2026' }))
+    await user.click(screen.getByRole('button', { name: 'SPRING26' }))
 
-    expect(fetchOfferings).toHaveBeenCalledWith('SPRING2026', '*', '*', 1, 10)
+    expect(fetchOfferings).toHaveBeenCalledWith('SPRING26', '*', '*', 1, 10)
   })
 
   /* ---- Pagination ---- */

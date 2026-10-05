@@ -2,6 +2,7 @@
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
 import { authenticate } from '../middleware/auth.js'
+import { validateTerm, validateSection } from '../../shared/validate.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -162,6 +163,16 @@ offeringRouter.post('/create', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: class_id, teacher_id, term, section' })
     }
 
+    // Validate field patterns (rules live in config/validation-rules.js)
+    const termError = validateTerm(term)
+    if (termError) {
+      return res.status(400).json({ error: termError })
+    }
+    const sectionError = validateSection(section)
+    if (sectionError) {
+      return res.status(400).json({ error: sectionError })
+    }
+
     const clsId = parseInt(class_id, 10)
     const teacherId = parseInt(teacher_id, 10)
     if (isNaN(clsId) || isNaN(teacherId)) {
@@ -210,6 +221,13 @@ offeringRouter.post('/update/:id', async (req, res) => {
     // Validate that at least one field is provided
     if (class_id === undefined && teacher_id === undefined && term === undefined && section === undefined) {
       return res.status(400).json({ error: 'No update fields provided' })
+    }
+
+    // Validate patterns for any offering fields being changed
+    const termError = term !== undefined ? validateTerm(term) : null
+    const sectionError = section !== undefined ? validateSection(section) : null
+    if (termError || sectionError) {
+      return res.status(400).json({ error: termError || sectionError })
     }
 
     // Check offering exists

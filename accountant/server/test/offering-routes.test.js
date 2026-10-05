@@ -63,11 +63,11 @@ describe('Offering API Routes', () => {
       mockPrisma.offering.findMany.mockResolvedValue([])
       mockPrisma.offering.aggregate.mockResolvedValue({ _count: { _all: 0 } })
 
-      const res = await request(app).get('/offering/list/FALL2025/1/2')
+      const res = await request(app).get('/offering/list/FALL25/1/2')
       expect(res.status).toBe(200)
       expect(mockPrisma.offering.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { term: 'FALL2025', class_id: 1, teacher_id: 2 }
+          where: { term: 'FALL25', class_id: 1, teacher_id: 2 }
         })
       )
     })
@@ -132,8 +132,8 @@ describe('Offering API Routes', () => {
         id: 1,
         class_id: 1,
         teacher_id: 1,
-        term: 'FALL2025',
-        section: 'A',
+        term: 'FALL25',
+        section: '101',
         class: { id: 1, subject: 'CS', number: '101', title: 'Intro CS' },
         teacher: { id: 1, username: 'prof', email: 'prof@uni.edu' },
         projects: [{ id: 5 }, { id: 9 }]
@@ -145,7 +145,7 @@ describe('Offering API Routes', () => {
         expect.objectContaining({ where: { id: 1 } })
       )
       expect(res.body.id).toBe(1)
-      expect(res.body.term).toBe('FALL2025')
+      expect(res.body.term).toBe('FALL25')
       expect(res.body.class).toEqual({ id: 1, subject: 'CS', number: '101', title: 'Intro CS' })
       expect(res.body.teacher).toEqual({ id: 1, username: 'prof', email: 'prof@uni.edu' })
       expect(res.body.project_ids).toEqual([5, 9])
@@ -191,13 +191,13 @@ describe('Offering API Routes', () => {
   describe('GET /offering/terms', () => {
     it('returns the distinct sorted term values', async () => {
       mockPrisma.offering.findMany.mockResolvedValue([
-        { term: 'FALL2025' },
-        { term: 'SPRING2026' }
+        { term: 'FALL25' },
+        { term: 'SPRING26' }
       ])
 
       const res = await request(app).get('/offering/terms')
       expect(res.status).toBe(200)
-      expect(res.body.terms).toEqual(['FALL2025', 'SPRING2026'])
+      expect(res.body.terms).toEqual(['FALL25', 'SPRING26'])
       expect(mockPrisma.offering.findMany).toHaveBeenCalledWith({
         distinct: ['term'],
         select: { term: true },
@@ -232,10 +232,66 @@ describe('Offering API Routes', () => {
       expect(res.body.error).toContain('Missing required fields')
     })
 
+    it('returns 400 when the term violates the university pattern', async () => {
+      const res = await request(app)
+        .post('/offering/create')
+        .send({ class_id: 1, teacher_id: 1, term: 'FALL2025', section: '101' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('term')
+      expect(mockPrisma.offering.create).not.toHaveBeenCalled()
+    })
+
+    it('returns 400 for a term with an unknown semester', async () => {
+      const res = await request(app)
+        .post('/offering/create')
+        .send({ class_id: 1, teacher_id: 1, term: 'AUTUMN26', section: '101' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('term')
+    })
+
+    it('accepts a two-letter semester code (e.g. FA25)', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(CLS)
+      mockPrisma.user.findUnique.mockResolvedValue(TEACHER)
+      mockPrisma.offering.findUnique.mockResolvedValue(null)
+      mockPrisma.offering.create.mockResolvedValue(TEST_OFFERING)
+
+      const res = await request(app)
+        .post('/offering/create')
+        .send({ class_id: 1, teacher_id: 1, term: 'FA25', section: '101' })
+      expect(res.status).toBe(201)
+      expect(mockPrisma.offering.create).toHaveBeenCalledWith({
+        data: { class_id: 1, teacher_id: 1, term: 'FA25', section: '101' }
+      })
+    })
+
+    it('returns 400 when the section violates the university pattern', async () => {
+      const res = await request(app)
+        .post('/offering/create')
+        .send({ class_id: 1, teacher_id: 1, term: 'FALL25', section: 'A' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('section')
+      expect(mockPrisma.offering.create).not.toHaveBeenCalled()
+    })
+
+    it('accepts a prefixed single-digit section (e.g. DH4)', async () => {
+      mockPrisma.class.findUnique.mockResolvedValue(CLS)
+      mockPrisma.user.findUnique.mockResolvedValue(TEACHER)
+      mockPrisma.offering.findUnique.mockResolvedValue(null)
+      mockPrisma.offering.create.mockResolvedValue(TEST_OFFERING)
+
+      const res = await request(app)
+        .post('/offering/create')
+        .send({ class_id: 1, teacher_id: 1, term: 'FALL25', section: 'DH4' })
+      expect(res.status).toBe(201)
+      expect(mockPrisma.offering.create).toHaveBeenCalledWith({
+        data: { class_id: 1, teacher_id: 1, term: 'FALL25', section: 'DH4' }
+      })
+    })
+
     it('returns 400 when class_id or teacher_id is not numeric', async () => {
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 'abc', teacher_id: 1, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 'abc', teacher_id: 1, term: 'FALL25', section: '101' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('numeric')
     })
@@ -246,7 +302,7 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 99, teacher_id: 1, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 99, teacher_id: 1, term: 'FALL25', section: '101' })
       expect(res.status).toBe(404)
       expect(res.body).toEqual({ error: 'Class not found' })
     })
@@ -257,7 +313,7 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 1, teacher_id: 99, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 1, teacher_id: 99, term: 'FALL25', section: '101' })
       expect(res.status).toBe(404)
       expect(res.body).toEqual({ error: 'Teacher not found' })
     })
@@ -268,7 +324,7 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 1, teacher_id: 2, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 1, teacher_id: 2, term: 'FALL25', section: '101' })
       expect(res.status).toBe(400)
       expect(res.body.error).toContain('not a teacher or admin')
     })
@@ -281,10 +337,10 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 1, teacher_id: 3, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 1, teacher_id: 3, term: 'FALL25', section: '101' })
       expect(res.status).toBe(201)
       expect(mockPrisma.offering.create).toHaveBeenCalledWith({
-        data: { class_id: 1, teacher_id: 3, term: 'FALL2025', section: 'A' }
+        data: { class_id: 1, teacher_id: 3, term: 'FALL25', section: '101' }
       })
     })
 
@@ -295,7 +351,7 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 1, teacher_id: 1, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 1, teacher_id: 1, term: 'FALL25', section: '101' })
       expect(res.status).toBe(409)
       expect(res.body.error).toContain('already exists')
     })
@@ -308,10 +364,10 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 1, teacher_id: 1, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 1, teacher_id: 1, term: 'FALL25', section: '101' })
       expect(res.status).toBe(201)
       expect(mockPrisma.offering.create).toHaveBeenCalledWith({
-        data: { class_id: 1, teacher_id: 1, term: 'FALL2025', section: 'A' }
+        data: { class_id: 1, teacher_id: 1, term: 'FALL25', section: '101' }
       })
       expect(res.body.id).toBe(TEST_OFFERING.id)
     })
@@ -323,7 +379,7 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/create')
-        .send({ class_id: 1, teacher_id: 1, term: 'FALL2025', section: 'A' })
+        .send({ class_id: 1, teacher_id: 1, term: 'FALL25', section: '101' })
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to create offering' })
     })
@@ -349,29 +405,47 @@ describe('Offering API Routes', () => {
       expect(res.body).toEqual({ error: 'No update fields provided' })
     })
 
+    it('returns 400 when the new term or section violates the university pattern', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+
+      const badTerm = await request(app)
+        .post('/offering/update/1')
+        .send({ term: 'FALL2025' })
+      expect(badTerm.status).toBe(400)
+      expect(badTerm.body.error).toContain('term')
+
+      const badSection = await request(app)
+        .post('/offering/update/1')
+        .send({ section: 'A' })
+      expect(badSection.status).toBe(400)
+      expect(badSection.body.error).toContain('section')
+
+      expect(mockPrisma.offering.update).not.toHaveBeenCalled()
+    })
+
     it('returns 404 when offering does not exist', async () => {
       mockPrisma.offering.findUnique.mockResolvedValue(null)
 
       const res = await request(app)
         .post('/offering/update/999')
-        .send({ section: 'B' })
+        .send({ section: '102' })
       expect(res.status).toBe(404)
       expect(res.body).toEqual({ error: 'Offering not found' })
     })
 
     it('updates term and section successfully', async () => {
       mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
-      mockPrisma.offering.update.mockResolvedValue({ ...TEST_OFFERING, term: 'SPRING2026', section: 'B' })
+      mockPrisma.offering.update.mockResolvedValue({ ...TEST_OFFERING, term: 'SPRING26', section: '102' })
 
       const res = await request(app)
         .post('/offering/update/1')
-        .send({ term: 'SPRING2026', section: 'B' })
+        .send({ term: 'SPRING26', section: '102' })
       expect(res.status).toBe(200)
       expect(mockPrisma.offering.update).toHaveBeenCalledWith({
         where: { id: 1 },
-        data: { term: 'SPRING2026', section: 'B' }
+        data: { term: 'SPRING26', section: '102' }
       })
-      expect(res.body.term).toBe('SPRING2026')
+      expect(res.body.term).toBe('SPRING26')
     })
 
     it('validates the new class when class_id changes', async () => {
@@ -439,7 +513,7 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/update/1')
-        .send({ section: 'A' })
+        .send({ section: '101' })
       expect(res.status).toBe(409)
       expect(res.body.error).toContain('already exists')
     })
@@ -449,11 +523,11 @@ describe('Offering API Routes', () => {
       // Uniqueness check finds the offering itself
       mockPrisma.offering.findUnique.mockResolvedValueOnce(TEST_OFFERING)
       mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
-      mockPrisma.offering.update.mockResolvedValue({ ...TEST_OFFERING, section: 'C' })
+      mockPrisma.offering.update.mockResolvedValue({ ...TEST_OFFERING, section: '103' })
 
       const res = await request(app)
         .post('/offering/update/1')
-        .send({ section: 'C' })
+        .send({ section: '103' })
       expect(res.status).toBe(200)
     })
 
@@ -463,7 +537,7 @@ describe('Offering API Routes', () => {
 
       const res = await request(app)
         .post('/offering/update/1')
-        .send({ section: 'B' })
+        .send({ section: '102' })
       expect(res.status).toBe(500)
       expect(res.body).toEqual({ error: 'Failed to update offering' })
     })

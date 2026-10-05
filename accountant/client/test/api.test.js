@@ -241,9 +241,9 @@ describe('services/api', () => {
     it('sends term, class_id and teacher_id as URL positions when provided', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 3, limit: 10, totalPages: 3 }))
 
-      await fetchOfferings('FALL2025', 1, 2, 3, 10)
+      await fetchOfferings('FALL25', 1, 2, 3, 10)
 
-      expect(fetch).toHaveBeenCalledWith('/offering/list/FALL2025/1/2?page=3&limit=10', { headers: {} })
+      expect(fetch).toHaveBeenCalledWith('/offering/list/FALL25/1/2?page=3&limit=10', { headers: {} })
     })
 
     it('throws the server-provided error message on failure', async () => {
@@ -255,12 +255,12 @@ describe('services/api', () => {
 
   describe('fetchOfferingTerms', () => {
     it('returns the distinct terms from the API', async () => {
-      fetch.mockResolvedValueOnce(jsonResponse({ terms: ['FALL2025', 'SPRING2026'] }))
+      fetch.mockResolvedValueOnce(jsonResponse({ terms: ['FALL25', 'SPRING26'] }))
 
       const terms = await fetchOfferingTerms()
 
       expect(fetch).toHaveBeenCalledWith('/offering/terms', { headers: {} })
-      expect(terms).toEqual(['FALL2025', 'SPRING2026'])
+      expect(terms).toEqual(['FALL25', 'SPRING26'])
     })
 
     it('falls back to an empty list when the response has no terms', async () => {
@@ -280,19 +280,19 @@ describe('services/api', () => {
     it('posts the payload with snake_case id fields', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ id: 1 }))
 
-      await createOffering({ classId: 2, teacherId: 5, term: 'FALL2025', section: 'A' })
+      await createOffering({ classId: 2, teacherId: 5, term: 'FALL25', section: '101' })
 
       expect(fetch).toHaveBeenCalledWith('/offering/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ class_id: 2, teacher_id: 5, term: 'FALL2025', section: 'A' })
+        body: JSON.stringify({ class_id: 2, teacher_id: 5, term: 'FALL25', section: '101' })
       })
     })
 
     it('throws the server-provided error message on failure', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ error: 'An offering for this class already exists in this term and section' }, false))
 
-      await expect(createOffering({ classId: 1, teacherId: 1, term: 'FALL2025', section: 'A' })).rejects.toThrow(/already exists/)
+      await expect(createOffering({ classId: 1, teacherId: 1, term: 'FALL25', section: '101' })).rejects.toThrow(/already exists/)
     })
   })
 
@@ -300,19 +300,19 @@ describe('services/api', () => {
     it('only includes fields that are defined (partial update)', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ id: 1 }))
 
-      await updateOffering(1, { section: 'B' })
+      await updateOffering(1, { section: '102' })
 
       expect(fetch).toHaveBeenCalledWith('/offering/update/1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ section: 'B' })
+        body: JSON.stringify({ section: '102' })
       })
     })
 
     it('throws the server-provided error message on failure', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ error: 'Another offering already exists for this class, term and section' }, false))
 
-      await expect(updateOffering(1, { term: 'SPRING2026' })).rejects.toThrow(/already exists/)
+      await expect(updateOffering(1, { term: 'SPRING26' })).rejects.toThrow(/already exists/)
     })
   })
 
@@ -344,9 +344,9 @@ describe('services/api', () => {
     it('sends the class code and term as URL positions when provided', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ data: [], total: 0, page: 3, limit: 10, totalPages: 3 }))
 
-      await fetchProjects('CS-101', 'FALL2025', 3, 10)
+      await fetchProjects('CS-101', 'FALL25', 3, 10)
 
-      expect(fetch).toHaveBeenCalledWith('/project/list/CS-101/FALL2025?page=3&limit=10', { headers: {} })
+      expect(fetch).toHaveBeenCalledWith('/project/list/CS-101/FALL25?page=3&limit=10', { headers: {} })
     })
 
     it('throws the server-provided error message on failure', async () => {
@@ -588,13 +588,13 @@ describe('services/api', () => {
     it('createOffering falls back to its default message', async () => {
       fetch.mockResolvedValueOnce(badJsonResponse())
 
-      await expect(createOffering({ classId: 1, teacherId: 1, term: 'FALL2025', section: 'A' })).rejects.toThrow('Failed to create offering')
+      await expect(createOffering({ classId: 1, teacherId: 1, term: 'FALL25', section: '101' })).rejects.toThrow('Failed to create offering')
     })
 
     it('updateOffering falls back to its default message', async () => {
       fetch.mockResolvedValueOnce(badJsonResponse())
 
-      await expect(updateOffering(1, { term: 'SPRING2026' })).rejects.toThrow('Failed to update offering')
+      await expect(updateOffering(1, { term: 'SPRING26' })).rejects.toThrow('Failed to update offering')
     })
 
     it('deleteOffering falls back to its default message', async () => {

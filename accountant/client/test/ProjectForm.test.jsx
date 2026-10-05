@@ -23,8 +23,8 @@ const CLASSES = [
   { id: 2, subject: 'MATH', number: '201', title: 'Calculus I' }
 ]
 const OFFERINGS = [
-  { id: 1, class_id: 1, teacher_id: 1, term: 'FALL2025', section: 'A' },
-  { id: 2, class_id: 2, teacher_id: 1, term: 'SPRING2026', section: 'B' }
+  { id: 1, class_id: 1, teacher_id: 1, term: 'FALL25', section: '101' },
+  { id: 2, class_id: 2, teacher_id: 1, term: 'SPRING26', section: '102' }
 ]
 
 const PROJECT_1 = {
@@ -92,8 +92,8 @@ describe('ProjectForm', () => {
 
     // Open the offering listbox and check its options
     await user.click(screen.getByLabelText('Offering'))
-    expect(await screen.findByRole('option', { name: 'CS 101 – FALL2025 A' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'MATH 201 – SPRING2026 B' })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'CS 101 – FALL25 101' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'MATH 201 – SPRING26 102' })).toBeInTheDocument()
     await user.keyboard('{Escape}')
 
     expect(fetchOfferings).toHaveBeenCalledWith('*', '*', '*', 1, 100)
@@ -117,7 +117,7 @@ describe('ProjectForm', () => {
     renderForm({ open: true })
     await waitOptionsLoaded()
 
-    await selectOption('Offering', 'CS 101 – FALL2025 A')
+    await selectOption('Offering', 'CS 101 – FALL25 101')
     await user.type(screen.getByLabelText('Title'), 'Final Project')
     await user.type(screen.getByLabelText('Slug'), 'Bad Slug')
 
@@ -131,7 +131,7 @@ describe('ProjectForm', () => {
     const { onClose, onSubmit } = renderForm({ open: true })
     await waitOptionsLoaded()
 
-    await selectOption('Offering', 'CS 101 – FALL2025 A')
+    await selectOption('Offering', 'CS 101 – FALL25 101')
     await user.type(screen.getByLabelText('Title'), 'Final Project')
     await user.type(screen.getByLabelText('Slug'), 'final-project')
     await user.type(screen.getByLabelText('Git URL'), 'https://github.com/example/final-project.git')
@@ -162,7 +162,7 @@ describe('ProjectForm', () => {
     expect(screen.getByLabelText('Git URL')).toHaveValue('https://github.com/example/final-project.git')
     expect(screen.getByLabelText('Description')).toHaveValue('Complete final assignment for the course')
     // The select shows its chosen value once the options have loaded
-    expect(await screen.findByText('CS 101 – FALL2025 A')).toBeInTheDocument()
+    expect(await screen.findByText('CS 101 – FALL25 101')).toBeInTheDocument()
   })
 
   it('updates an existing project when saved', async () => {
@@ -208,7 +208,7 @@ describe('ProjectForm', () => {
     renderForm({ open: true })
     await waitOptionsLoaded()
 
-    await selectOption('Offering', 'CS 101 – FALL2025 A')
+    await selectOption('Offering', 'CS 101 – FALL25 101')
     await user.type(screen.getByLabelText('Title'), 'Final Project')
     await user.type(screen.getByLabelText('Slug'), 'final-project')
 

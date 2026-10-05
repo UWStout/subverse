@@ -15,7 +15,7 @@ describe('FilterChips', () => {
     render(
       <FilterChips
         label='Term:'
-        options={[{ value: '*', label: 'All' }, { value: 'FALL2025', label: 'FALL2025' }]}
+        options={[{ value: '*', label: 'All' }, { value: 'FALL25', label: 'FALL25' }]}
         value='*'
         onChange={() => {}}
       />
@@ -23,7 +23,7 @@ describe('FilterChips', () => {
 
     expect(screen.getByText('Term:')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'FALL2025' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'FALL25' })).toBeInTheDocument()
   })
 
   it('accepts plain strings as options (value and label)', async () => {

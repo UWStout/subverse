@@ -163,8 +163,8 @@ export const TEST_OFFERING = {
   id: 1,
   class_id: 1,
   teacher_id: 1,
-  term: 'FALL2025',
-  section: 'A'
+  term: 'FALL25',
+  section: '101'
 }
 
 /**

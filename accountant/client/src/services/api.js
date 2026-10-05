@@ -209,7 +209,7 @@ export async function deleteOffering (id) {
 /**
  * GET /project/list/:class/:term
  * `class` is a subject-number code (e.g. 'CS-101') and `term` a term value
- * (e.g. 'FALL2025'); each position accepts '*' for "any", but at least one
+ * (e.g. 'FALL25'); each position accepts '*' for "any", but at least one
  * must be concrete or the server returns 400.
  * Query params: ?page=N&limit=N  (defaults: page=1, limit=25)
  * Returns { data, total, page, limit, totalPages } of plain project rows -
