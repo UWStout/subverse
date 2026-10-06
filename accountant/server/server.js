@@ -46,6 +46,19 @@ app.use('/project/', projectRouter)
 // Serve static files from the public directory (compiled frontend + static assets)
 app.use(express.static(path.join(ROOT_DIR, 'public')))
 
+// --- SPA Fallback ---
+// Client-side routes (e.g. /users, /offerings) are not real files on disk.
+// When a browser loads or refreshes one directly, serve index.html so React
+// Router can render the matching page. API prefixes are excluded so unknown
+// API paths still produce a proper 404 instead of an HTML page.
+const API_PREFIXES = ['auth', 'user', 'class', 'offering', 'project']
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || !req.accepts('html')) return next()
+  const segment = req.path.split('/')[1]
+  if (API_PREFIXES.includes(segment)) return next()
+  res.sendFile(path.join(ROOT_DIR, 'public', 'index.html'))
+})
+
 // --- Error Handler ---
 // Catches anything that slips past a route handler's own try/catch
 // (e.g. malformed JSON bodies rejected by express.json()). Logs the full

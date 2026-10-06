@@ -19,8 +19,10 @@ vi.mock('../src/services/api', () => ({
   createBootstrapAccount: vi.fn()
 }))
 
+let setUser
+
 function renderLogin (user = null) {
-  useAuth.mockReturnValue({ user })
+  useAuth.mockReturnValue({ user, setUser })
   return render(
     <MemoryRouter initialEntries={['/login']}>
       <Routes>
@@ -36,6 +38,7 @@ describe('Login page', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    setUser = vi.fn()
     login.mockResolvedValue(undefined)
     fetchBootstrapStatus.mockResolvedValue(false)
     createBootstrapAccount.mockResolvedValue({ message: 'ok', user: { id: 1, type: 'ADMIN' } })
@@ -59,6 +62,18 @@ describe('Login page', () => {
     await user.click(screen.getByRole('button', { name: 'Sign In' }))
 
     expect(login).toHaveBeenCalledWith('testuser', 'password')
+  })
+
+  it('updates the auth context and redirects to the users page on successful login', async () => {
+    login.mockResolvedValue({ id: 1, username: 'alice' })
+    renderLogin()
+
+    await user.type(await screen.findByLabelText('Username'), 'testuser')
+    await user.type(screen.getByLabelText('Password'), 'password')
+    await user.click(screen.getByRole('button', { name: 'Sign In' }))
+
+    expect(await screen.findByText('Users page')).toBeInTheDocument()
+    expect(setUser).toHaveBeenCalledWith({ id: 1, username: 'alice' })
   })
 
   it('does not call the API when the form is empty', async () => {

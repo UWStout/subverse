@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Header from '../src/components/Header'
@@ -14,9 +15,12 @@ const TEACHER = { id: 1, username: 'prof', type: 'TEACHER' }
 const STUDENT = { id: 2, username: 'student', type: 'STUDENT' }
 const ADMIN = { id: 3, username: 'admin', type: 'ADMIN' }
 
+let logoutMock
+
 /** Render the header with a given auth user. */
 function renderHeader (user) {
-  useAuth.mockReturnValue({ user, loading: false, logout: vi.fn() })
+  logoutMock = vi.fn()
+  useAuth.mockReturnValue({ user, loading: false, logout: logoutMock })
   return render(
     <ThemeProvider>
       <MemoryRouter initialEntries={['/users']}>
@@ -31,8 +35,9 @@ describe('Header', () => {
     vi.clearAllMocks()
   })
 
-  // Note: MUI Buttons rendered with component={Link} are <a> elements, so the
-  // nav items expose role="link" (the theme toggle is the only real button).
+  // Note: MUI Buttons rendered with component={Link} are <a> elements and
+  // expose role="link"; the theme toggle and (when authenticated) Logout are
+  // real buttons.
 
   it('shows the brand and the Users link for everyone', () => {
     renderHeader(null)
@@ -46,13 +51,23 @@ describe('Header', () => {
 
     expect(screen.getByRole('link', { name: 'Login' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Logout' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Logout' })).not.toBeInTheDocument()
   })
 
-  it('shows a Logout link (no Login) when authenticated', () => {
+  it('shows a Logout button (no Login) when authenticated', () => {
     renderHeader(TEACHER)
 
-    expect(screen.getByRole('link', { name: 'Logout' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Login' })).not.toBeInTheDocument()
+  })
+
+  it('calls the auth logout function when Logout is clicked', async () => {
+    renderHeader(TEACHER)
+    const user = await userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Logout' }))
+
+    expect(logoutMock).toHaveBeenCalledTimes(1)
   })
 
   // The Offerings link is role-restricted - see NAV_LINKS in Header.jsx.

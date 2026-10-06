@@ -115,4 +115,23 @@ describe('App', () => {
     expect(await screen.findByText('Class Projects')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add Project' })).toBeInTheDocument()
   })
+
+  it('shows a 404 page for unknown routes (not the users page)', async () => {
+    fetchCurrentUser.mockResolvedValue(ADMIN)
+
+    visit('/bubble')
+    render(<App />)
+
+    expect(await screen.findByText('Page not found')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to Users' })).toBeInTheDocument()
+    expect(screen.queryByText('User Accounts')).not.toBeInTheDocument()
+  })
+
+  it('shows a 404 page for unknown routes even when anonymous', async () => {
+    visit('/bubble')
+    render(<App />)
+
+    expect(await screen.findByText('Page not found')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
+  })
 })

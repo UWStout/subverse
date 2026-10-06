@@ -11,24 +11,29 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Trailing slashes are intentional: Vite matches proxy keys by prefix
+    // (url.startsWith(key)), so a key like '/user' would also capture the
+    // SPA route '/users' and forward it to Express, which 404s. With the
+    // slash, only real API paths are proxied and client-side routes fall
+    // through to Vite's index.html fallback (React Router takes over).
     proxy: {
-      '/user': {
+      '/user/': {
         target: 'http://localhost:3000',
         changeOrigin: true
       },
-      '/class': {
+      '/class/': {
         target: 'http://localhost:3000',
         changeOrigin: true
       },
-      '/offering': {
+      '/offering/': {
         target: 'http://localhost:3000',
         changeOrigin: true
       },
-      '/project': {
+      '/project/': {
         target: 'http://localhost:3000',
         changeOrigin: true
       },
-      '/auth': {
+      '/auth/': {
         target: 'http://localhost:3000',
         changeOrigin: true
       }

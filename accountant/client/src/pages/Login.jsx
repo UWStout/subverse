@@ -26,7 +26,7 @@ import BootstrapForm from '../components/BootstrapForm'
  */
 export default function Login () {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, setUser } = useAuth()
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -57,7 +57,9 @@ export default function Login () {
     setLoading(true)
     setError('')
     try {
-      await login(username, password)
+      const userData = await login(username, password)
+      // Refresh the auth context so route guards recognize us as logged in
+      setUser(userData)
       navigate('/users')
     } catch (err) {
       setError(err.message)

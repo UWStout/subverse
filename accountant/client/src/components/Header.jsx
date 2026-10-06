@@ -19,7 +19,7 @@ const NAV_LINKS = [
  */
 export default function Header () {
   const location = useLocation()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
 
   const visibleLinks = NAV_LINKS.filter(link => {
     if (link.roles) return user && link.roles.includes(user.type)
@@ -56,9 +56,11 @@ export default function Header () {
 
           {user
             ? (
+              // Real button (not a Link): logout must clear the token and
+              // auth state, not just navigate - otherwise the Login page's
+              // "already authenticated" effect bounces us right back.
               <Button
-                component={Link}
-                to='/login'
+                onClick={logout}
                 color='inherit'
                 sx={{
                   fontWeight: 400,
