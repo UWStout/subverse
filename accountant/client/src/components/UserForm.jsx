@@ -11,6 +11,7 @@ import {
   MenuItem,
   Select,
   TextField,
+  Typography,
   Alert
 } from '@mui/material'
 import { checkAvailability, createUser, updateUser } from '../services/api'
@@ -24,12 +25,16 @@ const USER_TYPES = ['STUDENT', 'TEACHER', 'ADMIN']
  * -----
  * open          – boolean controlling visibility
  * user          – existing user object (edit mode) or undefined (create mode)
+ * selfEdit      – true when the current user is editing their OWN account.
+ *                 The title changes to "Edit Account" and the Type field is
+ *                 locked out of the payload, because only admins may change a
+ *                 user's type (the server 403s anyone else who sends it).
  * onClose       – () => void  called when dialog closes
  * onSubmit      – (createdUser?) => void  fired after a successful create /
  *                 update; on create the newly created user is passed so the
  *                 page can report that a verification email was sent
  */
-export default function UserForm ({ open, user, onClose, onSubmit }) {
+export default function UserForm ({ open, user, selfEdit = false, onClose, onSubmit }) {
   const isEdit = !!user
 
   // Local form state
@@ -109,7 +114,10 @@ export default function UserForm ({ open, user, onClose, onSubmit }) {
         return
       }
 
-      const payload = { username, email, password, type, firstName, lastName }
+      // Only admins may change a user's type; when editing one's own account
+      // we omit it entirely so the server keeps the current type.
+      const payload = { username, email, password, firstName, lastName }
+      if (!selfEdit) payload.type = type
 
       if (isEdit) {
         await updateUser(user.id, payload)
@@ -131,7 +139,7 @@ export default function UserForm ({ open, user, onClose, onSubmit }) {
 
   return (
     <Dialog open={open} onClose={!loading ? onClose : undefined} maxWidth='sm' fullWidth>
-      <DialogTitle>{isEdit ? 'Edit User' : 'Create User'}</DialogTitle>
+      <DialogTitle>{isEdit ? (selfEdit ? 'Edit Account' : 'Edit User') : 'Create User'}</DialogTitle>
 
       <DialogContent dividers>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
@@ -192,12 +200,17 @@ export default function UserForm ({ open, user, onClose, onSubmit }) {
               value={type}
               label='Type'
               onChange={e => setType(e.target.value)}
-              disabled={loading}
+              disabled={loading || selfEdit}
             >
               {USER_TYPES.map(t => (
                 <MenuItem key={t} value={t}>{t}</MenuItem>
               ))}
             </Select>
+            {selfEdit && (
+              <Typography variant='caption' color='text.secondary' sx={{ ml: 1 }}>
+                Only admins can change an account type.
+              </Typography>
+            )}
           </FormControl>
 
           {serverError && (

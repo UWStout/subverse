@@ -21,12 +21,12 @@ const EXISTING_USER = {
   type: 'TEACHER'
 }
 
-function renderForm ({ open = true, user = null } = {}) {
+function renderForm ({ open = true, user = null, selfEdit = false } = {}) {
   const onClose = vi.fn()
   const onSubmit = vi.fn()
   render(
     <ThemeProvider>
-      <UserForm open={open} user={user} onClose={onClose} onSubmit={onSubmit} />
+      <UserForm open={open} user={user} selfEdit={selfEdit} onClose={onClose} onSubmit={onSubmit} />
     </ThemeProvider>
   )
   return { onClose, onSubmit }
@@ -209,6 +209,30 @@ describe('UserForm', () => {
 
     expect(await screen.findByText(/already exists/)).toBeInTheDocument()
     expect(screen.getByText('Edit User')).toBeInTheDocument()
+  })
+
+  it('in self-edit mode shows "Edit Account" and locks the type out of the payload', async () => {
+    const { onClose, onSubmit } = renderForm({ open: true, user: EXISTING_USER, selfEdit: true })
+
+    expect(await screen.findByText('Edit Account')).toBeInTheDocument()
+    // The type control is disabled (aria-disabled on the combobox) with an
+    // explanatory note
+    expect(screen.getByText(/Only admins can change an account type/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Type')).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    // No `type` in the payload - only admins may change a user's type, and
+    // the server 403s non-admins who send it
+    expect(updateUser).toHaveBeenCalledWith(4, {
+      username: 'existing',
+      email: 'ex@uni.edu',
+      password: '',
+      firstName: 'Ex',
+      lastName: 'Isting'
+    })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('closes the dialog without submitting when cancelled', async () => {
