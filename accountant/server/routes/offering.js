@@ -1,7 +1,7 @@
 /* eslint-disable camelcase */
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireVerified } from '../middleware/auth.js'
 import { validateTerm, validateSection } from '../../shared/validate.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
@@ -18,6 +18,9 @@ offeringRouter.use(json())
 
 // All offering routes require a valid session token
 offeringRouter.use(authenticate)
+
+// ...and a verified (non-provisional) email address
+offeringRouter.use(requireVerified)
 
 /**
  * Parse ?page=N&limit=N query params into pagination values.

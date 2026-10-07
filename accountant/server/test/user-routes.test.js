@@ -232,7 +232,14 @@ describe('User API Routes', () => {
     })
 
     it('returns 500 on database error (admin)', async () => {
-      mockPrisma.user.findUnique.mockRejectedValue(new Error('DB down'))
+      // First findUnique call is requireVerified's requester check (passes);
+      // the route's own lookup fails.
+      let calls = 0
+      mockPrisma.user.findUnique.mockImplementation(async () => {
+        calls += 1
+        if (calls === 1) return TEST_USER
+        throw new Error('DB down')
+      })
 
       const res = await request(app)
         .get('/user/1')
@@ -567,7 +574,14 @@ describe('User API Routes', () => {
     })
 
     it('returns 500 on database error', async () => {
-      mockPrisma.user.findUnique.mockRejectedValue(new Error('DB down'))
+      // First findUnique call is requireVerified's requester check (passes);
+      // the route's own lookup fails.
+      let calls = 0
+      mockPrisma.user.findUnique.mockImplementation(async () => {
+        calls += 1
+        if (calls === 1) return TEST_USER
+        throw new Error('DB down')
+      })
 
       const res = await request(app)
         .post('/user/update/1')
@@ -846,7 +860,14 @@ describe('User API Routes', () => {
     })
 
     it('returns 500 on database error during lookup (admin)', async () => {
-      mockPrisma.user.findUnique.mockRejectedValue(new Error('DB down'))
+      // First findUnique call is requireVerified's requester check (passes);
+      // the route's own lookup fails.
+      let calls = 0
+      mockPrisma.user.findUnique.mockImplementation(async () => {
+        calls += 1
+        if (calls === 1) return TEST_USER
+        throw new Error('DB down')
+      })
 
       const res = await request(app)
         .delete('/user/1')

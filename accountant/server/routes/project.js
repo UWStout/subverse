@@ -1,7 +1,7 @@
 /* eslint-disable camelcase */
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireVerified } from '../middleware/auth.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -31,6 +31,9 @@ projectRouter.use(json())
 
 // All project routes require a valid session token
 projectRouter.use(authenticate)
+
+// ...and a verified (non-provisional) email address
+projectRouter.use(requireVerified)
 
 /**
  * Parse a subject-number class code (e.g. "CS-101").

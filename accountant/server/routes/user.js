@@ -2,7 +2,8 @@
 import bcrypt from 'bcryptjs'
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireVerified } from '../middleware/auth.js'
+import { generateVerificationToken, deliverVerificationEmail } from '../verification.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -18,6 +19,9 @@ userRouter.use(json())
 
 // All user routes require a valid session token
 userRouter.use(authenticate)
+
+// ...and a verified (non-provisional) email address
+userRouter.use(requireVerified)
 
 /** Valid values for the User.type field (mirrors the Prisma UserType enum). */
 const VALID_TYPES = ['STUDENT', 'TEACHER', 'ADMIN']
@@ -236,6 +240,10 @@ userRouter.post('/create', async (req, res) => {
     // Hash the password
     const passwordHash = await bcrypt.hash(password, 10)
 
+    // New accounts are provisional until their email is verified: mint a token
+    // and record the send time in the same write.
+    const verificationToken = generateVerificationToken()
+
     // Create the user
     const user = await getDb().user.create({
       data: {
@@ -244,9 +252,14 @@ userRouter.post('/create', async (req, res) => {
         password_hash: passwordHash,
         type: userType,
         first_name: first_name ?? null,
-        last_name: last_name ?? null
+        last_name: last_name ?? null,
+        verification_token: verificationToken,
+        verification_sent_at: new Date()
       }
     })
+
+    // Best-effort: the account stays provisional (locked out) if delivery fails.
+    await deliverVerificationEmail(user, verificationToken)
 
     // Return the newly created user (with sensitive info removed)
     res.status(201).json({ user: sanitizeUser(user) })

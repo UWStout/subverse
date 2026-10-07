@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import jwt from 'jsonwebtoken'
+import { getDatabase } from '../db.js'
 
 /**
  * Signing secret for session tokens. Set JWT_SECRET in the environment for
@@ -28,5 +29,30 @@ export function authenticate (req, res, next) {
   } catch (err) {
     console.error(`AUTH FAIL: ${req.method} ${req.originalUrl} from ${req.ip} - invalid or expired token (${err.message})`)
     return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+}
+
+/**
+ * Express middleware: require the session user's email address to be verified.
+ * Must run after authenticate(). Any account with a pending verification_token
+ * is PROVISIONAL and receives 403 on every protected route until it verifies
+ * its email (see POST /auth/verify-email). The status is read from the database
+ * on each request, so verification takes effect immediately - no re-login needed.
+ */
+export async function requireVerified (req, res, next) {
+  try {
+    const user = await getDatabase().user.findUnique({ where: { id: req.user.sub } })
+    // Unknown or deleted users fall through; the route handles them (401/404).
+    if (!user) return next()
+
+    if (user.verification_token != null) {
+      console.error(`AUTH FAIL: ${req.method} ${req.originalUrl} from ${req.ip} - user '${user.username}' has an unverified email address`)
+      return res.status(403).json({ error: 'Email address not verified', email_verified: false })
+    }
+
+    next()
+  } catch (err) {
+    console.error('Error checking email verification status:', err)
+    res.status(500).json({ error: 'Failed to check account status' })
   }
 }

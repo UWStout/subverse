@@ -92,6 +92,10 @@ beforeEach(() => {
   // Reset deleteMany on assignment and offering (models that have it)
   mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 0 })
   mockPrisma.offering.deleteMany.mockResolvedValue({ count: 0 })
+
+  // Mailer delivers successfully by default
+  mockMailer.sendVerificationEmail.mockResolvedValue({ accepted: [] })
+  mockMailer.sendPasswordResetEmail.mockResolvedValue({ accepted: [] })
 })
 
 // ---------------------------------------------------------------------------
@@ -112,6 +116,24 @@ const dbPath = path.resolve(__dirname, '..', 'db.js')
 vi.doMock(dbPath, () => ({
   getDatabase: () => mockPrisma,
   initDatabase: () => mockPrisma
+}))
+
+// ---------------------------------------------------------------------------
+// Mock the mailer - tests must never open a real SMTP connection (the project
+// .env contains live Brevo credentials that dotenv would otherwise load).
+// ---------------------------------------------------------------------------
+const mailerPath = path.resolve(__dirname, '..', 'mailer.js')
+
+export const mockMailer = {
+  sendVerificationEmail: vi.fn().mockResolvedValue({ accepted: [] }),
+  sendPasswordResetEmail: vi.fn().mockResolvedValue({ accepted: [] }),
+  buildVerificationUrl: (token) => `http://test.local/verify?token=${token}`,
+  buildResetUrl: (token) => `http://test.local/reset-password?token=${token}`
+}
+
+vi.doMock(mailerPath, () => ({
+  ...mockMailer,
+  APP_BASE_URL: 'http://test.local'
 }))
 
 // ---------------------------------------------------------------------------
