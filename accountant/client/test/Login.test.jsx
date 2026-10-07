@@ -3,8 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import Login from '../src/pages/Login'
+import ForgotPassword from '../src/pages/ForgotPassword'
 import { useAuth } from '../src/context/AuthContext'
-import { login, fetchBootstrapStatus, createBootstrapAccount } from '../src/services/api'
+import { login, fetchBootstrapStatus, createBootstrapAccount, requestPasswordReset } from '../src/services/api'
 
 // Mock the auth context - Login only consumes the useAuth hook.
 vi.mock('../src/context/AuthContext', () => ({
@@ -12,11 +13,14 @@ vi.mock('../src/context/AuthContext', () => ({
 }))
 
 // Mock the API layer so tests never touch the network (mirrors how the
-// server suite mocks Prisma/bcrypt in server/test/setup.js).
+// server suite mocks Prisma/bcrypt in server/test/setup.js). isEmailVerified
+// is a pure helper, so the real implementation is inlined into the mock.
 vi.mock('../src/services/api', () => ({
   login: vi.fn(),
   fetchBootstrapStatus: vi.fn(),
-  createBootstrapAccount: vi.fn()
+  createBootstrapAccount: vi.fn(),
+  requestPasswordReset: vi.fn(),
+  isEmailVerified: (user) => !!user && user.verification_sent_at == null
 }))
 
 let setUser
@@ -28,6 +32,8 @@ function renderLogin (user = null) {
       <Routes>
         <Route path='/login' element={<Login />} />
         <Route path='/users' element={<div>Users page</div>} />
+        <Route path='/verify' element={<div>Verify page</div>} />
+        <Route path='/forgot-password' element={<ForgotPassword />} />
       </Routes>
     </MemoryRouter>
   )
@@ -42,6 +48,7 @@ describe('Login page', () => {
     login.mockResolvedValue(undefined)
     fetchBootstrapStatus.mockResolvedValue(false)
     createBootstrapAccount.mockResolvedValue({ message: 'ok', user: { id: 1, type: 'ADMIN' } })
+    requestPasswordReset.mockResolvedValue({ message: 'ok' })
     user = await userEvent.setup()
   })
 
@@ -52,6 +59,16 @@ describe('Login page', () => {
     expect(await screen.findByLabelText('Username')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument()
+  })
+
+  it('links to the forgot-password page from the sign-in form', async () => {
+    renderLogin()
+
+    const link = await screen.findByRole('link', { name: /forgot your password/i })
+    await user.click(link)
+
+    expect(screen.getByRole('heading', { name: 'Reset Your Password' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Username or email')).toBeInTheDocument()
   })
 
   it('submits the entered credentials to the API', async () => {
@@ -74,6 +91,19 @@ describe('Login page', () => {
 
     expect(await screen.findByText('Users page')).toBeInTheDocument()
     expect(setUser).toHaveBeenCalledWith({ id: 1, username: 'alice' })
+  })
+
+  it('redirects a newly logged-in user with an unverified email to the verification page', async () => {
+    login.mockResolvedValue({ id: 1, username: 'alice', verification_sent_at: '2026-10-07T00:00:00Z' })
+    renderLogin()
+
+    await user.type(await screen.findByLabelText('Username'), 'testuser')
+    await user.type(screen.getByLabelText('Password'), 'password')
+    await user.click(screen.getByRole('button', { name: 'Sign In' }))
+
+    expect(await screen.findByText('Verify page')).toBeInTheDocument()
+    expect(setUser).toHaveBeenCalledWith({ id: 1, username: 'alice', verification_sent_at: '2026-10-07T00:00:00Z' })
+    expect(screen.queryByText('Users page')).not.toBeInTheDocument()
   })
 
   it('does not call the API when the form is empty', async () => {

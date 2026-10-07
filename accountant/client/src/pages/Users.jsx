@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   Alert,
+  Box,
   Chip,
   IconButton,
   Table,
@@ -15,6 +16,7 @@ import {
   Tooltip
 } from '@mui/material'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
+import MailOutlinedIcon from '@mui/icons-material/MailOutlined'
 import InfoIcon from '@mui/icons-material/Info'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -65,6 +67,7 @@ function UsersContent () {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   // Filter & pagination (server-side)
   const [filterType, setFilterType] = useState('*')
@@ -106,9 +109,14 @@ function UsersContent () {
 
   /* ---- Handlers ---- */
 
-  function handleFormSubmit () {
+  function handleFormSubmit (createdUser) {
     // Reload the current page after a successful create / update
     loadUsers()
+    // New accounts are provisional until their email is verified; tell the
+    // operator that the verification email is on its way to the new user.
+    if (createdUser?.email) {
+      setNotice(`A verification email has been sent to ${createdUser.email} - they must open it and click the link before they can sign in.`)
+    }
   }
 
   function openCreate () {
@@ -172,6 +180,11 @@ function UsersContent () {
         <Alert severity='error' sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>
       )}
 
+      {/* Post-create notice about the verification email */}
+      {notice && (
+        <Alert severity='info' sx={{ mb: 2 }} onClose={() => setNotice('')}>{notice}</Alert>
+      )}
+
       {/* Type filter chips */}
       <FilterChips
         label='Filter:'
@@ -210,7 +223,20 @@ function UsersContent () {
                 <TableCell>{u.last_name || ''}</TableCell>
                 <TableCell>{u.email}</TableCell>
                 <TableCell>
-                  <Chip label={u.type} color={TYPE_COLORS[u.type] || 'default'} size='small' />
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    <Chip label={u.type} color={TYPE_COLORS[u.type] || 'default'} size='small' />
+                    {u.verification_sent_at != null && (
+                      <Tooltip title='Email address not yet verified - the account is locked out until they click the emailed link'>
+                        <Chip
+                          icon={<MailOutlinedIcon />}
+                          label='Unverified'
+                          color='warning'
+                          variant='outlined'
+                          size='small'
+                        />
+                      </Tooltip>
+                    )}
+                  </Box>
                 </TableCell>
                 <TableCell align='right'>
                   <Tooltip title='Details'>

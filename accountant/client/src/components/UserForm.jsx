@@ -25,7 +25,9 @@ const USER_TYPES = ['STUDENT', 'TEACHER', 'ADMIN']
  * open          – boolean controlling visibility
  * user          – existing user object (edit mode) or undefined (create mode)
  * onClose       – () => void  called when dialog closes
- * onSubmit      – () => void  callback fired after successful create / update
+ * onSubmit      – (createdUser?) => void  fired after a successful create /
+ *                 update; on create the newly created user is passed so the
+ *                 page can report that a verification email was sent
  */
 export default function UserForm ({ open, user, onClose, onSubmit }) {
   const isEdit = !!user
@@ -111,11 +113,14 @@ export default function UserForm ({ open, user, onClose, onSubmit }) {
 
       if (isEdit) {
         await updateUser(user.id, payload)
+        onSubmit()
       } else {
-        await createUser(payload)
+        const data = await createUser(payload)
+        // New accounts are provisional: the server emailed a verification
+        // link to the new user, so hand the created record up for reporting.
+        onSubmit(data.user)
       }
 
-      onSubmit()
       onClose()
     } catch (err) {
       setServerError(err.message)

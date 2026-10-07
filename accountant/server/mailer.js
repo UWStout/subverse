@@ -1,6 +1,8 @@
 import 'dotenv/config'
 import nodemailer from 'nodemailer'
 
+import { APP_NAME } from './config.js'
+
 /**
  * Base URL of the client application that verification links point to.
  * Override with APP_BASE_URL in the environment (defaults to the Vite dev server).
@@ -36,6 +38,15 @@ function getTransporter () {
   return transporter
 }
 
+/**
+ * The verified sender address for the From field. Brevo rejects mail from
+ * unverified addresses, so use SMTP_FROM when provided and fall back to the
+ * API login address otherwise.
+ */
+function getFromAddress () {
+  return process.env.SMTP_FROM || process.env.SMTP_LOGIN
+}
+
 /** Build the URL a user clicks to verify their email address. */
 export function buildVerificationUrl (token) {
   const base = APP_BASE_URL.replace(/\/+$/, '')
@@ -57,13 +68,13 @@ export async function sendVerificationEmail (user, token) {
   const firstName = user.first_name || user.username
 
   return getTransporter().sendMail({
-    from: `"Accountant" <${process.env.SMTP_LOGIN}>`,
+    from: `"${APP_NAME}" <${getFromAddress()}>`,
     to: user.email,
     subject: 'Verify your email address',
     text: [
       `Hi ${firstName},`,
       '',
-      'An account was created for you on the Accountant system.',
+      `An account was created for you on the ${APP_NAME} system.`,
       'Please verify your email address by opening the link below:',
       '',
       url,
@@ -72,7 +83,7 @@ export async function sendVerificationEmail (user, token) {
     ].join('\n'),
     html: [
       `<p>Hi ${firstName},</p>`,
-      '<p>An account was created for you on the Accountant system.</p>',
+      `<p>An account was created for you on the ${APP_NAME} system.</p>`,
       '<p>Please verify your email address by opening the link below:</p>',
       `<p><a href="${url}">${url}</a></p>`,
       '<p>If you did not create this account, you can ignore this message.</p>'
@@ -89,13 +100,13 @@ export async function sendPasswordResetEmail (user, token) {
   const firstName = user.first_name || user.username
 
   return getTransporter().sendMail({
-    from: `"Accountant" <${process.env.SMTP_LOGIN}>`,
+    from: `"${APP_NAME}" <${getFromAddress()}>`,
     to: user.email,
     subject: 'Reset your password',
     text: [
       `Hi ${firstName},`,
       '',
-      'A password reset was requested for your account on the Accountant system.',
+      `A password reset was requested for your account on the ${APP_NAME} system.`,
       'Open the link below to choose a new password:',
       '',
       url,
@@ -105,7 +116,7 @@ export async function sendPasswordResetEmail (user, token) {
     ].join('\n'),
     html: [
       `<p>Hi ${firstName},</p>`,
-      '<p>A password reset was requested for your account on the Accountant system.</p>',
+      `<p>A password reset was requested for your account on the ${APP_NAME} system.</p>`,
       '<p>Open the link below to choose a new password:</p>',
       `<p><a href="${url}">${url}</a></p>`,
       '<p>This link will expire shortly. If you did not request a reset, you can ignore this message - your password will remain unchanged.</p>'

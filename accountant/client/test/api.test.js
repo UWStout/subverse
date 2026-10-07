@@ -26,6 +26,11 @@ import {
   getAuthHeaders,
   login,
   fetchCurrentUser,
+  isEmailVerified,
+  verifyEmail,
+  resendVerification,
+  requestPasswordReset,
+  resetPassword,
   fetchBootstrapStatus,
   createBootstrapAccount
 } from '../src/services/api'
@@ -518,6 +523,142 @@ describe('services/api', () => {
 
       await expect(fetchCurrentUser()).rejects.toThrow('Not logged in')
       expect(getToken()).toBeNull()
+    })
+  })
+
+  describe('isEmailVerified', () => {
+    it('treats a null verification_sent_at as verified', () => {
+      expect(isEmailVerified({ id: 1, username: 'alice', verification_sent_at: null })).toBe(true)
+    })
+
+    it('treats a pending verification_sent_at as unverified', () => {
+      expect(isEmailVerified({ id: 1, username: 'alice', verification_sent_at: '2026-10-07T00:00:00Z' })).toBe(false)
+    })
+
+    it('treats a missing user as unverified', () => {
+      expect(isEmailVerified(null)).toBe(false)
+    })
+  })
+
+  describe('verifyEmail', () => {
+    it('posts the token without an auth header (public endpoint)', async () => {
+      setToken('tok123') // a stored session token must NOT be sent - verify-email is public
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'Email address verified successfully' }))
+
+      const res = await verifyEmail('abc123')
+
+      expect(fetch).toHaveBeenCalledWith('/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: 'abc123' })
+      })
+      expect(res.message).toBe('Email address verified successfully')
+    })
+
+    it('throws the server error for an invalid token (400)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Invalid verification token' }, false))
+
+      await expect(verifyEmail('bad')).rejects.toThrow('Invalid verification token')
+    })
+
+    it('throws the server error for an expired token (410)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Verification token has expired. Request a new one.' }, false))
+
+      await expect(verifyEmail('old')).rejects.toThrow(/expired/)
+    })
+
+    it('falls back to its default message when the body is not valid JSON', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(verifyEmail('x')).rejects.toThrow('Failed to verify email address')
+    })
+  })
+
+  describe('resendVerification', () => {
+    it('posts the stored token as a Bearer header (authenticated endpoint)', async () => {
+      setToken('tok123')
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'Verification email sent' }))
+
+      await resendVerification()
+
+      expect(fetch).toHaveBeenCalledWith('/auth/resend-verification', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer tok123' }
+      })
+    })
+
+    it('throws the server error when delivery fails (502)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Failed to send verification email. Try again later.' }, false))
+
+      await expect(resendVerification()).rejects.toThrow(/try again later/i)
+    })
+
+    it('throws the server error when the address is already verified', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Email address already verified' }, false))
+
+      await expect(resendVerification()).rejects.toThrow('Email address already verified')
+    })
+  })
+
+  describe('requestPasswordReset', () => {
+    it('posts the identifier without an auth header (public endpoint)', async () => {
+      setToken('tok123') // a stored session token must NOT be sent - forgot-password is public
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'If an account matches that username or email, a password reset link has been sent' }))
+
+      const res = await requestPasswordReset('alice@example.com')
+
+      expect(fetch).toHaveBeenCalledWith('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: 'alice@example.com' })
+      })
+      expect(res.message).toMatch(/password reset link has been sent/i)
+    })
+
+    it('throws the server error on failure (500)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Failed to process password reset request' }, false))
+
+      await expect(requestPasswordReset('alice')).rejects.toThrow(/failed to process/i)
+    })
+
+    it('falls back to its default message when the body is not valid JSON', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(requestPasswordReset('alice')).rejects.toThrow('Failed to request password reset')
+    })
+  })
+
+  describe('resetPassword', () => {
+    it('posts the token and new password without an auth header (public endpoint)', async () => {
+      setToken('tok123') // a stored session token must NOT be sent - reset-password is public
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'Password has been reset successfully' }))
+
+      const res = await resetPassword('abc123', 'new-secret-1')
+
+      expect(fetch).toHaveBeenCalledWith('/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: 'abc123', password: 'new-secret-1' })
+      })
+      expect(res.message).toBe('Password has been reset successfully')
+    })
+
+    it('throws the server error for an invalid token (400)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Invalid reset token' }, false))
+
+      await expect(resetPassword('bad', 'new-secret-1')).rejects.toThrow('Invalid reset token')
+    })
+
+    it('throws the server error for an expired token (410)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Reset token has expired. Request a new one.' }, false))
+
+      await expect(resetPassword('old', 'new-secret-1')).rejects.toThrow(/expired/)
+    })
+
+    it('falls back to its default message when the body is not valid JSON', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(resetPassword('x', 'y')).rejects.toThrow('Failed to reset password')
     })
   })
 

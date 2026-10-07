@@ -19,6 +19,7 @@ function renderProtected (auth) {
           <Route index element={<div>Secret content</div>} />
         </Route>
         <Route path='/login' element={<div>Login page</div>} />
+        <Route path='/verify' element={<div>Verify page</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -47,6 +48,17 @@ describe('PrivateRoute', () => {
     renderProtected({ user: { id: 1, username: 'alice' }, loading: false })
 
     expect(screen.getByText('Secret content')).toBeInTheDocument()
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument()
+  })
+
+  it('redirects authenticated but unverified users to the verification page', () => {
+    renderProtected({
+      user: { id: 1, username: 'alice', verification_sent_at: '2026-10-07T00:00:00Z' },
+      loading: false
+    })
+
+    expect(screen.getByText('Verify page')).toBeInTheDocument()
+    expect(screen.queryByText('Secret content')).not.toBeInTheDocument()
     expect(screen.queryByText('Login page')).not.toBeInTheDocument()
   })
 })

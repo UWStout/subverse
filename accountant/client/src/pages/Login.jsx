@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
   Alert,
@@ -12,7 +12,7 @@ import {
 } from '@mui/material'
 import LockIcon from '@mui/icons-material/Lock'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
-import { login, fetchBootstrapStatus } from '../services/api'
+import { login, fetchBootstrapStatus, isEmailVerified } from '../services/api'
 import BootstrapForm from '../components/BootstrapForm'
 
 /**
@@ -37,10 +37,11 @@ export default function Login () {
   const [bootstrapMode, setBootstrapMode] = useState(null)
   const [created, setCreated] = useState(false)
 
-  // Redirect authenticated users to the users page
+  // Redirect authenticated users into the app; accounts with an unverified
+  // email address go to the verification page instead of the users page.
   useEffect(() => {
     if (user) {
-      navigate('/users')
+      navigate(isEmailVerified(user) ? '/users' : '/verify')
     }
   }, [user, navigate])
 
@@ -58,9 +59,10 @@ export default function Login () {
     setError('')
     try {
       const userData = await login(username, password)
-      // Refresh the auth context so route guards recognize us as logged in
+      // Refresh the auth context so route guards recognize us as logged in;
+      // accounts with an unverified email address must verify first.
       setUser(userData)
-      navigate('/users')
+      navigate(isEmailVerified(userData) ? '/users' : '/verify')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -98,7 +100,8 @@ export default function Login () {
       <>
         {created && (
           <Alert severity='success' sx={{ mb: 2 }}>
-            Initial admin account created - you can now sign in.
+            Initial admin account created - a verification email has been sent.
+            Sign in, then verify your email address to activate the account.
           </Alert>
         )}
 
@@ -136,6 +139,12 @@ export default function Login () {
             </Button>
           </Box>
         </form>
+
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+          <Button component={Link} to='/forgot-password' size='small'>
+            Forgot your password?
+          </Button>
+        </Box>
 
         <Typography variant='body2' color='text.secondary' sx={{ mt: 2, textAlign: 'center' }}>
           Accounts are created by your teacher or admin.

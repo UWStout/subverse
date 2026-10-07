@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import jwt from 'jsonwebtoken'
+import { APP_NAME } from './config.js'
 import { getDatabase } from './db.js'
 import { JWT_SECRET } from './middleware/auth.js'
 
@@ -50,7 +51,8 @@ export async function maybeStartBootstrap () {
     const token = generateBootstrapToken()
     console.log('')
     console.log('============================================================')
-    console.log(' BOOTSTRAP MODE: no user accounts exist yet.')
+    console.log(` ${APP_NAME} - BOOTSTRAP MODE`)
+    console.log(' No user accounts exist yet.')
     console.log(' Open the login page and create the initial ADMIN account.')
     console.log(` One-time bootstrap token (expires in ${BOOTSTRAP_TOKEN_TTL}):`)
     console.log(`   ${token}`)

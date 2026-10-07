@@ -2,6 +2,7 @@ import 'dotenv/config'
 
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { APP_NAME } from './config.js'
 import { initDatabase } from './db.js'
 import { maybeStartBootstrap } from './bootstrap.js'
 import { accessLog } from './middleware/logger.js'
@@ -74,5 +75,5 @@ app.use((err, req, res, next) => {
 
 // --- Start the Server ---
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`)
+  console.log(`${APP_NAME} server running on port ${port}`)
 })

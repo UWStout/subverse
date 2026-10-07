@@ -385,6 +385,89 @@ export async function fetchCurrentUser () {
 }
 
 /**
+ * A user's email is verified when the server holds no pending verification
+ * token for them; the API exposes that as `verification_sent_at === null`.
+ */
+export function isEmailVerified (user) {
+  return !!user && user.verification_sent_at == null
+}
+
+/**
+ * POST /auth/verify-email - public endpoint; confirm an account's email using
+ * the token from the verification link (see the /verify page). Throws with
+ * the server message for invalid (400) or expired (410) tokens.
+ */
+export async function verifyEmail (token) {
+  const res = await fetch(`${BASE}/auth/verify-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token })
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to verify email address' }))
+    throw new Error(err.error || 'Failed to verify email address')
+  }
+  return res.json()
+}
+
+/**
+ * POST /auth/resend-verification - authenticated; reissue the current user's
+ * verification token and send a fresh email. Unverified (provisional)
+ * sessions may use this: the server registers it before the verified-only
+ * guard, so locked-out accounts can recover from a lost or expired link.
+ */
+export async function resendVerification () {
+  const res = await fetch(`${BASE}/auth/resend-verification`, {
+    method: 'POST',
+    headers: getAuthHeaders()
+  })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to resend verification email' }))
+    throw new Error(err.error || 'Failed to resend verification email')
+  }
+  return res.json()
+}
+
+/**
+ * POST /auth/forgot-password - public endpoint; request a password-reset
+ * link for an account identified by username or email. The server responds
+ * identically whether or not an account matches (so the response never
+ * reveals which identifiers are registered) and emails a reset link to
+ * /reset-password when one is found.
+ */
+export async function requestPasswordReset (identifier) {
+  const res = await fetch(`${BASE}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier })
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to request password reset' }))
+    throw new Error(err.error || 'Failed to request password reset')
+  }
+  return res.json()
+}
+
+/**
+ * POST /auth/reset-password - public endpoint; set a new password using the
+ * token from the reset email. The token is single-use and expires after a
+ * short window (see RESET_TIMEOUT on the server).
+ */
+export async function resetPassword (token, password) {
+  const res = await fetch(`${BASE}/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password })
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to reset password' }))
+    throw new Error(err.error || 'Failed to reset password')
+  }
+  return res.json()
+}
+
+/**
  * GET /auth/bootstrap/status - public endpoint.
  * Returns true when the server has no user accounts yet (bootstrap mode).
  */

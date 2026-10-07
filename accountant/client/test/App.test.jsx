@@ -18,6 +18,9 @@ vi.mock('../src/services/api', () => ({
   clearToken: vi.fn(),
   login: vi.fn(),
   fetchBootstrapStatus: vi.fn(),
+  verifyEmail: vi.fn(),
+  resendVerification: vi.fn(),
+  isEmailVerified: (user) => !!user && user.verification_sent_at == null,
   fetchUsers: vi.fn(),
   deleteUser: vi.fn(),
   checkAvailability: vi.fn(),
@@ -75,6 +78,16 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByText('User Accounts')).toBeInTheDocument()
+  })
+
+  it('redirects an authenticated but unverified user to the verification page', async () => {
+    fetchCurrentUser.mockResolvedValue({ ...ADMIN, verification_sent_at: '2026-10-07T00:00:00Z' })
+
+    visit('/users')
+    render(<App />)
+
+    expect(await screen.findByText('Verify Your Email Address')).toBeInTheDocument()
+    expect(screen.queryByText('User Accounts')).not.toBeInTheDocument()
   })
 
   it('shows the offerings page for a teacher', async () => {

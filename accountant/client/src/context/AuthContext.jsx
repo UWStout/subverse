@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchCurrentUser, clearToken } from '../services/api'
+import { fetchCurrentUser, clearToken, isEmailVerified } from '../services/api'
 
 const AuthContext = createContext()
 
@@ -32,13 +32,19 @@ export function AuthProvider ({ children }) {
     navigate('/login')
   }
 
-  // Protect routes by redirecting unauthenticated users to login
+  // Protect routes by redirecting unauthenticated users to login and
+  // unverified (provisional) accounts to the email verification page -
+  // the server denies every protected endpoint for them until verified.
   const protect = (element) => {
     if (loading) {
       return <div>Loading...</div>
     }
     if (!user) {
       navigate('/login')
+      return null
+    }
+    if (!isEmailVerified(user)) {
+      navigate('/verify')
       return null
     }
     return element

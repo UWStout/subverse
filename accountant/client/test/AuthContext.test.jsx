@@ -5,10 +5,12 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider, useAuth } from '../src/context/AuthContext'
 import { fetchCurrentUser, clearToken } from '../src/services/api'
 
-// Mock the API layer so tests never touch the network.
+// Mock the API layer so tests never touch the network. isEmailVerified is a
+// pure helper, so the real implementation is inlined into the mock.
 vi.mock('../src/services/api', () => ({
   fetchCurrentUser: vi.fn(),
-  clearToken: vi.fn()
+  clearToken: vi.fn(),
+  isEmailVerified: (user) => !!user && user.verification_sent_at == null
 }))
 
 /** Test harness exposing every part of the auth context. */
@@ -30,6 +32,7 @@ function renderHarness () {
       <Routes>
         <Route path='/' element={<AuthProvider><Harness /></AuthProvider>} />
         <Route path='/login' element={<div>Login page</div>} />
+        <Route path='/verify' element={<div>Verify page</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -63,6 +66,17 @@ describe('AuthContext', () => {
     expect(await screen.findByText('Login page')).toBeInTheDocument()
     expect(clearToken).toHaveBeenCalled()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
+  })
+
+  it('redirects unverified users to the verification page via protect()', async () => {
+    fetchCurrentUser.mockResolvedValue({ id: 1, username: 'alice', verification_sent_at: '2026-10-07T00:00:00Z' })
+
+    renderHarness()
+
+    // protect() sends provisional accounts to /verify instead of /login
+    expect(await screen.findByText('Verify page')).toBeInTheDocument()
+    expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument()
   })
 
   it('shows the loading placeholder while the session is being verified', () => {
