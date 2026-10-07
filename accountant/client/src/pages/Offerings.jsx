@@ -13,6 +13,7 @@ import {
   Tooltip
 } from '@mui/material'
 import SchoolIcon from '@mui/icons-material/School'
+import InfoIcon from '@mui/icons-material/Info'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import Layout from '../components/Layout'
@@ -22,6 +23,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import RequireRole from '../components/RequireRole'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import OfferingForm from '../components/OfferingForm'
+import OfferingDetailsDialog from '../components/OfferingDetailsDialog'
 import { fetchOfferings, fetchOfferingTerms, deleteOffering, fetchClasses, fetchTeachers } from '../services/api'
 
 /** Roles allowed to view / manage class offerings; every role except students. */
@@ -65,6 +67,9 @@ function OfferingsContent () {
   // Modal state
   const [formOpen, setFormOpen] = useState(false)
   const [editingOffering, setEditingOffering] = useState(null)
+
+  // Details dialog
+  const [detailsOffering, setDetailsOffering] = useState(null)
 
   // Delete confirmation
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -252,6 +257,11 @@ function OfferingsContent () {
                 <TableCell>{o.section}</TableCell>
                 <TableCell>{teacherById.get(o.teacher_id)?.username || ''}</TableCell>
                 <TableCell align='right'>
+                  <Tooltip title='Details'>
+                    <IconButton size='small' onClick={() => setDetailsOffering(o)}>
+                      <InfoIcon fontSize='small' />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title='Edit'>
                     <IconButton size='small' onClick={() => openEdit(o)}>
                       <EditIcon fontSize='small' />
@@ -285,6 +295,13 @@ function OfferingsContent () {
         offering={editingOffering}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
+      />
+
+      {/* Details dialog */}
+      <OfferingDetailsDialog
+        open={!!detailsOffering}
+        offering={detailsOffering}
+        onClose={() => setDetailsOffering(null)}
       />
 
       {/* Delete confirmation dialog */}

@@ -110,7 +110,7 @@ offeringRouter.get('/terms', async (req, res) => {
 })
 
 // Get full details for a specific offering (joined with class and teacher
-// details plus the IDs of all projects belonging to it)
+// details plus the projects belonging to it, one level deep)
 offeringRouter.get('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
@@ -123,7 +123,10 @@ offeringRouter.get('/:id', async (req, res) => {
       include: {
         class: { select: { id: true, subject: true, number: true, title: true } },
         teacher: { select: { id: true, username: true, email: true } },
-        projects: { select: { id: true } }
+        projects: {
+          select: { id: true, title: true, slug: true, subversion_url: true, git_url: true },
+          orderBy: { id: 'asc' }
+        }
       }
     })
 
@@ -131,9 +134,10 @@ offeringRouter.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Offering not found' })
     }
 
-    // Return the offering with a flat list of its project IDs
+    // Return the offering with its project list (and a flat ID list for
+    // backwards compatibility)
     const { projects, ...rest } = offering
-    res.json({ ...rest, project_ids: projects.map(p => p.id) })
+    res.json({ ...rest, project_ids: projects.map(p => p.id), projects })
   } catch (err) {
     console.error('Error retrieving offering:', err)
     res.status(500).json({ error: 'Failed to retrieve offering' })

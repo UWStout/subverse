@@ -158,12 +158,35 @@ userRouter.get('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Students can only view their own account' })
     }
 
-    // Retrieve the user details by id
+    // Retrieve the user details by id, joined one level deep:
+    //  - taught_offerings -> class (what this teacher teaches)
+    //  - assignments -> project -> offering -> class (what this student works on)
     const user = await getDb().user.findUnique({
       where: { id },
       include: {
-        taught_offerings: true,
-        assignments: true
+        taught_offerings: {
+          include: {
+            class: { select: { id: true, subject: true, number: true, title: true } }
+          }
+        },
+        assignments: {
+          include: {
+            project: {
+              select: {
+                id: true,
+                title: true,
+                slug: true,
+                offering: {
+                  select: {
+                    term: true,
+                    section: true,
+                    class: { select: { subject: true, number: true, title: true } }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     })
 

@@ -28,6 +28,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
+    "db:seed": "tsx scripts/seed.mjs",
+    "db:clear": "tsx scripts/clear-db.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "audit:prod": "node scripts/audit-prod.mjs",

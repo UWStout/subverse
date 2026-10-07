@@ -144,6 +144,17 @@ export async function fetchOfferings (term = '*', classId = '*', teacherId = '*'
   return res.json()
 }
 
+/** GET /offering/:id - full offering details (class, teacher, projects) */
+export async function fetchOffering (id) {
+  const res = await fetch(`${BASE}/offering/${id}`, { headers: getAuthHeaders() })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to fetch offering' }))
+    throw new Error(err.error || 'Request failed')
+  }
+  return res.json()
+}
+
 /** GET /offering/terms - distinct term values for filter chips. */
 export async function fetchOfferingTerms () {
   const res = await fetch(`${BASE}/offering/terms`, { headers: getAuthHeaders() })
@@ -220,6 +231,17 @@ export async function fetchProjects (classCode = '*', term = '*', page = 1, limi
   if (!res.ok) {
     handleUnauthorized(res)
     const err = await res.json().catch(() => ({ error: 'Failed to list projects' }))
+    throw new Error(err.error || 'Request failed')
+  }
+  return res.json()
+}
+
+/** GET /project/:id - full project details (offering, class, teacher, assigned students) */
+export async function fetchProject (id) {
+  const res = await fetch(`${BASE}/project/${id}`, { headers: getAuthHeaders() })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to fetch project' }))
     throw new Error(err.error || 'Request failed')
   }
   return res.json()

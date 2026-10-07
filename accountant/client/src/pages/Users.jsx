@@ -15,6 +15,7 @@ import {
   Tooltip
 } from '@mui/material'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
+import InfoIcon from '@mui/icons-material/Info'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import Layout from '../components/Layout'
@@ -23,6 +24,7 @@ import FilterChips from '../components/FilterChips'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import UserForm from '../components/UserForm'
+import UserDetailsDialog from '../components/UserDetailsDialog'
 import { fetchUsers, deleteUser } from '../services/api'
 
 const TYPE_OPTIONS = [
@@ -72,6 +74,9 @@ function UsersContent () {
   // Modal state
   const [formOpen, setFormOpen] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
+
+  // Details dialog
+  const [detailsUser, setDetailsUser] = useState(null)
 
   // Delete confirmation
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -208,6 +213,11 @@ function UsersContent () {
                   <Chip label={u.type} color={TYPE_COLORS[u.type] || 'default'} size='small' />
                 </TableCell>
                 <TableCell align='right'>
+                  <Tooltip title='Details'>
+                    <IconButton size='small' onClick={() => setDetailsUser(u)}>
+                      <InfoIcon fontSize='small' />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title='Edit'>
                     <IconButton size='small' onClick={() => openEdit(u)}>
                       <EditIcon fontSize='small' />
@@ -241,6 +251,13 @@ function UsersContent () {
         user={editingUser}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
+      />
+
+      {/* Details dialog */}
+      <UserDetailsDialog
+        open={!!detailsUser}
+        user={detailsUser}
+        onClose={() => setDetailsUser(null)}
       />
 
       {/* Delete confirmation dialog */}

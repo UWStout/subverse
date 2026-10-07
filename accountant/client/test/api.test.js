@@ -7,11 +7,13 @@ import {
   updateUser,
   deleteUser,
   fetchOfferings,
+  fetchOffering,
   fetchOfferingTerms,
   createOffering,
   updateOffering,
   deleteOffering,
   fetchProjects,
+  fetchProject,
   createProject,
   updateProject,
   deleteProject,
@@ -253,6 +255,23 @@ describe('services/api', () => {
     })
   })
 
+  describe('fetchOffering', () => {
+    it('requests the offering by id and returns parsed data', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ id: 3, term: 'FALL25', projects: [] }))
+
+      const res = await fetchOffering(3)
+
+      expect(fetch).toHaveBeenCalledWith('/offering/3', { headers: {} })
+      expect(res.term).toBe('FALL25')
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Offering not found' }, false))
+
+      await expect(fetchOffering(3)).rejects.toThrow('Offering not found')
+    })
+  })
+
   describe('fetchOfferingTerms', () => {
     it('returns the distinct terms from the API', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ terms: ['FALL25', 'SPRING26'] }))
@@ -353,6 +372,23 @@ describe('services/api', () => {
       fetch.mockResolvedValueOnce(jsonResponse({ error: 'At least one filter (class or term) is required' }, false))
 
       await expect(fetchProjects()).rejects.toThrow(/at least one/i)
+    })
+  })
+
+  describe('fetchProject', () => {
+    it('requests the project by id and returns parsed data', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ id: 7, title: 'Realm of Echoes' }))
+
+      const res = await fetchProject(7)
+
+      expect(fetch).toHaveBeenCalledWith('/project/7', { headers: {} })
+      expect(res.title).toBe('Realm of Echoes')
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Project not found' }, false))
+
+      await expect(fetchProject(7)).rejects.toThrow('Project not found')
     })
   })
 

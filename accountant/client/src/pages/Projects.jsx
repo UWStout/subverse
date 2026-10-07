@@ -13,6 +13,7 @@ import {
   Tooltip
 } from '@mui/material'
 import AssignmentIcon from '@mui/icons-material/Assignment'
+import InfoIcon from '@mui/icons-material/Info'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import Layout from '../components/Layout'
@@ -21,6 +22,7 @@ import FilterChips from '../components/FilterChips'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import ProjectForm from '../components/ProjectForm'
+import ProjectDetailsDialog from '../components/ProjectDetailsDialog'
 import { useAuth } from '../context/AuthContext'
 import { fetchProjects, deleteProject, fetchOfferingTerms, fetchClasses, fetchOfferings } from '../services/api'
 
@@ -66,6 +68,9 @@ export default function Projects () {
   // Modal state
   const [formOpen, setFormOpen] = useState(false)
   const [editingProject, setEditingProject] = useState(null)
+
+  // Details dialog (available to all roles; students see their own projects only)
+  const [detailsProject, setDetailsProject] = useState(null)
 
   // Delete confirmation
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -206,8 +211,8 @@ export default function Projects () {
     ...terms.map(t => ({ value: t, label: t }))
   ]
 
-  // Students get no actions column
-  const colSpan = canManage ? 6 : 5
+  // All roles get an actions column (students: Details only)
+  const colSpan = 6
 
   /* ---- Render ---- */
 
@@ -252,7 +257,7 @@ export default function Projects () {
                   <TableCell>Class</TableCell>
                   <TableCell>Term</TableCell>
                   <TableCell>Repo</TableCell>
-                  {canManage && <TableCell align='right'>Actions</TableCell>}
+                  <TableCell align='right'>Actions</TableCell>
                 </TableRow>
               </TableHead>
 
@@ -270,20 +275,27 @@ export default function Projects () {
                     <TableCell>{classLabel(p)}</TableCell>
                     <TableCell>{offeringById.get(p.offering_id)?.term || ''}</TableCell>
                     <TableCell>{p.git_url || p.subversion_url || ''}</TableCell>
-                    {canManage && (
-                      <TableCell align='right'>
-                        <Tooltip title='Edit'>
-                          <IconButton size='small' onClick={() => openEdit(p)}>
-                            <EditIcon fontSize='small' />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title='Delete'>
-                          <IconButton size='small' color='error' onClick={() => confirmDelete(p)}>
-                            <DeleteIcon fontSize='small' />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    )}
+                    <TableCell align='right'>
+                      <Tooltip title='Details'>
+                        <IconButton size='small' onClick={() => setDetailsProject(p)}>
+                          <InfoIcon fontSize='small' />
+                        </IconButton>
+                      </Tooltip>
+                      {canManage && (
+                        <>
+                          <Tooltip title='Edit'>
+                            <IconButton size='small' onClick={() => openEdit(p)}>
+                              <EditIcon fontSize='small' />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title='Delete'>
+                            <IconButton size='small' color='error' onClick={() => confirmDelete(p)}>
+                              <DeleteIcon fontSize='small' />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -315,6 +327,13 @@ export default function Projects () {
           onSubmit={handleFormSubmit}
         />
       )}
+
+      {/* Details dialog (all roles) */}
+      <ProjectDetailsDialog
+        open={!!detailsProject}
+        project={detailsProject}
+        onClose={() => setDetailsProject(null)}
+      />
 
       {/* Delete confirmation dialog (managers only) */}
       {canManage && (
