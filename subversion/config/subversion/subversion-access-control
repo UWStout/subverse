@@ -1,4 +1,7 @@
+# Initial access control - replaced by the Accountant service on first sync.
+
 [groups]
+admins = berriers
 
 [/]
-* = r
+@admins = rw

@@ -7,15 +7,19 @@ const docker = new Docker()
  *
  * @param {string} containerName
  * @param {string[]} command
+ * @param {string} [input] Optional string written to the process' stdin
+ *   (enables AttachStdin on the exec). Useful for feeding file contents to
+ *   commands like `cat > /path/to/file` without shell-quoting headaches.
  * @returns {Promise<Object>}
  */
-export async function execCommand (containerName, command) {
+export async function execCommand (containerName, command, input = null) {
   // Connect to container and prepare command object
   const container = docker.getContainer(containerName)
   const exec = await container.exec({
     Cmd: command,
     AttachStdout: true,
-    AttachStderr: true
+    AttachStderr: true,
+    ...(input !== null && { AttachStdin: true })
   })
 
   // Strings to hold stdout and stderr
@@ -30,6 +34,12 @@ export async function execCommand (containerName, command) {
       { write: (chunk) => { output += chunk.toString() } },
       { write: (chunk) => { error += chunk.toString() } }
     )
+
+    // Feed stdin (if any) and close it so the command sees EOF
+    if (input !== null) {
+      stream.write(input)
+      stream.end()
+    }
 
     // When stream ends resolve the promise
     stream.on('end', async () => {
