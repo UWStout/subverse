@@ -19,10 +19,18 @@ import { resetPassword } from '../services/api'
  * link) they are prompted for a new password and confirmation; on submit the
  * single-use token is exchanged for the new password. Without one, the page
  * explains the situation and offers a way back to sign-in.
+ *
+ * With `?first_time=true` (sent in the "set your password" email that
+ * bulk-created accounts receive) the wording switches from "reset your
+ * password" to first-time-setup phrasing. The param is cosmetic only - the
+ * token is what authorizes anything.
  */
 export default function ResetPassword () {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
+  // Cosmetic only (set by the "set your password" email for bulk-created
+  // accounts): switches the page wording from "reset" to "first-time setup".
+  const firstTime = searchParams.get('first_time') === 'true'
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -68,8 +76,9 @@ export default function ResetPassword () {
     view = (
       <>
         <Alert severity='success' sx={{ mb: 2 }}>
-          Your password has been reset successfully. You can now sign in with
-          your new password.
+          {firstTime
+            ? 'Your password has been set. You can now sign in with it.'
+            : 'Your password has been reset successfully. You can now sign in with your new password.'}
         </Alert>
         <Button component={Link} to='/login' variant='contained' size='large'>
           Sign In
@@ -108,7 +117,7 @@ export default function ResetPassword () {
           )}
 
           <Button type='submit' variant='contained' size='large' disabled={loading}>
-            {loading ? 'Resetting…' : 'Reset Password'}
+            {loading ? (firstTime ? 'Setting…' : 'Resetting…') : (firstTime ? 'Set Password' : 'Reset Password')}
           </Button>
         </Box>
       </form>
@@ -121,7 +130,13 @@ export default function ResetPassword () {
         <CardContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, mb: 3 }}>
             <LockResetIcon color='primary' fontSize='large' />
-            <Typography variant='h5'>Reset Your Password</Typography>
+            <Typography variant='h5'>{firstTime ? 'Set Your Password' : 'Reset Your Password'}</Typography>
+            {firstTime && (
+              <Typography variant='body2' color='text.secondary' sx={{ textAlign: 'center' }}>
+                You are setting up your account for the first time. Choose the
+                password you will use to sign in from now on.
+              </Typography>
+            )}
           </Box>
           {view}
         </CardContent>

@@ -19,6 +19,7 @@ process.env.JWT_TIMEOUT = '8h'
 // Mock Prisma client - shared mutable object so route modules see the same instance
 // ---------------------------------------------------------------------------
 export const mockPrisma = {
+  $queryRaw: vi.fn().mockResolvedValue([]),
   user: {
     count: vi.fn().mockResolvedValue(0),
     findFirst: vi.fn().mockResolvedValue(null),
@@ -86,16 +87,19 @@ beforeEach(() => {
   }
 
   for (const key of Object.values(mockPrisma)) {
+    if (typeof key !== 'object') continue // skip top-level fns like $queryRaw
     resetModel(key)
   }
 
-  // Reset deleteMany on assignment and offering (models that have it)
+  // Reset the raw-query mock and deleteMany on assignment and offering
+  mockPrisma.$queryRaw.mockResolvedValue([])
   mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 0 })
   mockPrisma.offering.deleteMany.mockResolvedValue({ count: 0 })
 
   // Mailer delivers successfully by default
   mockMailer.sendVerificationEmail.mockResolvedValue({ accepted: [] })
   mockMailer.sendPasswordResetEmail.mockResolvedValue({ accepted: [] })
+  mockMailer.sendSetPasswordEmail.mockResolvedValue({ accepted: [] })
 })
 
 // ---------------------------------------------------------------------------
@@ -127,6 +131,7 @@ const mailerPath = path.resolve(__dirname, '..', 'mailer.js')
 export const mockMailer = {
   sendVerificationEmail: vi.fn().mockResolvedValue({ accepted: [] }),
   sendPasswordResetEmail: vi.fn().mockResolvedValue({ accepted: [] }),
+  sendSetPasswordEmail: vi.fn().mockResolvedValue({ accepted: [] }),
   buildVerificationUrl: (token) => `http://test.local/verify?token=${token}`,
   buildResetUrl: (token) => `http://test.local/reset-password?token=${token}`
 }

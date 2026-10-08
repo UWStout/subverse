@@ -1,5 +1,5 @@
 import { getDatabase } from './db.js'
-import { sendPasswordResetEmail } from './mailer.js'
+import { sendPasswordResetEmail, sendSetPasswordEmail } from './mailer.js'
 import { generateVerificationToken, parseDuration, tokenSentAtMs } from './verification.js'
 
 /** Lifetime of password-reset tokens, measured from when they were sent. */
@@ -35,6 +35,22 @@ export async function deliverPasswordResetEmail (user, token) {
     return true
   } catch (err) {
     console.error(`Failed to send password reset email to ${user.email}:`, err)
+    return false
+  }
+}
+
+/**
+ * Best-effort delivery of a "set your password" email for a newly created
+ * account (bulk creation, issue #3). Never throws: SMTP failures are logged
+ * and reported through the returned boolean. The reset token stays in the
+ * database either way, so the account can recover via forgot-password.
+ */
+export async function deliverSetPasswordEmail (user, token) {
+  try {
+    await sendSetPasswordEmail(user, token)
+    return true
+  } catch (err) {
+    console.error(`Failed to send set-password email to ${user.email}:`, err)
     return false
   }
 }

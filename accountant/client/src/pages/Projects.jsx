@@ -16,6 +16,7 @@ import AssignmentIcon from '@mui/icons-material/Assignment'
 import InfoIcon from '@mui/icons-material/Info'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
+import GroupAddIcon from '@mui/icons-material/GroupAdd'
 import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import FilterChips from '../components/FilterChips'
@@ -23,6 +24,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import ProjectForm from '../components/ProjectForm'
 import ProjectDetailsDialog from '../components/ProjectDetailsDialog'
+import BulkCreateDialog from '../components/BulkCreateDialog'
 import { useAuth } from '../context/AuthContext'
 import { fetchProjects, deleteProject, fetchOfferingTerms, fetchClasses, fetchOfferings } from '../services/api'
 
@@ -71,6 +73,9 @@ export default function Projects () {
 
   // Details dialog (available to all roles; students see their own projects only)
   const [detailsProject, setDetailsProject] = useState(null)
+
+  // Bulk user creation dialog (managers only) - bound to one project
+  const [bulkProject, setBulkProject] = useState(null)
 
   // Delete confirmation
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -283,6 +288,11 @@ export default function Projects () {
                       </Tooltip>
                       {canManage && (
                         <>
+                          <Tooltip title='Bulk add students'>
+                            <IconButton size='small' onClick={() => setBulkProject(p)}>
+                              <GroupAddIcon fontSize='small' />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title='Edit'>
                             <IconButton size='small' onClick={() => openEdit(p)}>
                               <EditIcon fontSize='small' />
@@ -334,6 +344,15 @@ export default function Projects () {
         project={detailsProject}
         onClose={() => setDetailsProject(null)}
       />
+
+      {/* Bulk user creation dialog (managers only) */}
+      {canManage && (
+        <BulkCreateDialog
+          open={!!bulkProject}
+          project={bulkProject}
+          onClose={() => setBulkProject(null)}
+        />
+      )}
 
       {/* Delete confirmation dialog (managers only) */}
       {canManage && (
