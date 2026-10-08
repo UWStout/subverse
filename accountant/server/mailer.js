@@ -97,7 +97,11 @@ export async function sendVerificationEmail (user, token) {
  * the standard /reset-password flow, which sets the account's first password.
  */
 export async function sendSetPasswordEmail (user, token) {
-  const url = buildResetUrl(token)
+  // first_time=true is purely cosmetic: it lets the reset page show
+  // "set your password" wording for a brand-new account. The token alone
+  // authorizes the operation, so tampering with the param changes nothing
+  // beyond the text on screen.
+  const url = `${buildResetUrl(token)}&first_time=true`
   const firstName = user.first_name || user.username
 
   return getTransporter().sendMail({

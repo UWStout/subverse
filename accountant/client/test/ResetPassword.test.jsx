@@ -88,3 +88,41 @@ describe('ResetPassword page', () => {
     expect(await screen.findByText(/expired/i)).toBeInTheDocument()
   })
 })
+
+describe('ResetPassword page - first-time setup (bulk-created accounts)', () => {
+  let user
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    resetPassword.mockResolvedValue({ message: 'Password has been set' })
+    user = await userEvent.setup()
+  })
+
+  it('shows set-password wording when first_time=true', () => {
+    renderReset('/reset-password?token=abc123&first_time=true')
+
+    expect(screen.getByText('Set Your Password')).toBeInTheDocument()
+    expect(screen.getByText(/setting up your account for the first time/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Set Password' })).toBeInTheDocument()
+  })
+
+  it('sets the password with the token and confirms in first-time wording', async () => {
+    renderReset('/reset-password?token=abc123&first_time=true')
+
+    await user.type(screen.getByLabelText('New Password'), 'new-secret-1')
+    await user.type(screen.getByLabelText('Confirm New Password'), 'new-secret-1')
+    await user.click(screen.getByRole('button', { name: 'Set Password' }))
+
+    expect(resetPassword).toHaveBeenCalledWith('abc123', 'new-secret-1')
+    expect(await screen.findByText(/password has been set/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign In' })).toBeInTheDocument()
+  })
+
+  it('keeps reset wording when the param is absent', () => {
+    renderReset('/reset-password?token=abc123')
+
+    expect(screen.getByText('Reset Your Password')).toBeInTheDocument()
+    expect(screen.queryByText(/first time/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset Password' })).toBeInTheDocument()
+  })
+})
