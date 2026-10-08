@@ -21,8 +21,18 @@ import { fetchCurrentUser } from '../services/api'
 import ThemeToggle from './ThemeToggle'
 import UserForm from './UserForm'
 
+// The home page for the brand link and root redirect: students land on
+// Projects (their read-only view of assigned projects), everyone else on
+// Users. Students have no business on the Users page - the server denies
+// them the user list - so they manage their own account via the avatar menu.
+export function homePathFor (user) {
+  return user && user.type === 'STUDENT' ? '/projects' : '/users'
+}
+
 const NAV_LINKS = [
-  { label: 'Users', to: '/users' },
+  // Students never see the Users page; they edit their own account through
+  // the avatar menu's "Edit Account" option instead.
+  { label: 'Users', to: '/users', exceptRoles: ['STUDENT'] },
   // Offerings is available to every role except students
   { label: 'Offerings', to: '/offerings', exceptRoles: ['STUDENT'] },
   // Projects is visible to every role; students get a read-only view of
@@ -79,7 +89,7 @@ export default function Header () {
     <AppBar position='sticky'>
       <Toolbar>
         <Typography variant='h6' component='div' sx={{ flexGrow: 1 }}>
-          <Link to='/users' style={{ color: 'inherit', textDecoration: 'none' }}>
+          <Link to={homePathFor(user)} style={{ color: 'inherit', textDecoration: 'none' }}>
             Accountant
           </Link>
         </Typography>

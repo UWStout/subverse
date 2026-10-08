@@ -59,6 +59,7 @@ function renderPage (user) {
         <Routes>
           <Route path='/offerings' element={<Offerings />} />
           <Route path='/users' element={<div>Users page</div>} />
+          <Route path='/projects' element={<div>Projects page</div>} />
           <Route path='/login' element={<div>Login page</div>} />
         </Routes>
       </MemoryRouter>
@@ -83,10 +84,11 @@ describe('Offerings page', () => {
 
   /* ---- Role gating ---- */
 
-  it('redirects students to the users page', async () => {
+  it('redirects students to the projects page (their home)', async () => {
     renderPage(STUDENT)
 
-    expect(await screen.findByText('Users page')).toBeInTheDocument()
+    expect(await screen.findByText('Projects page')).toBeInTheDocument()
+    expect(screen.queryByText('Users page')).not.toBeInTheDocument()
     expect(screen.queryByText('Class Offerings')).not.toBeInTheDocument()
     expect(fetchOfferings).not.toHaveBeenCalled()
   })

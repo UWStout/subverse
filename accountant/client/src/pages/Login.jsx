@@ -14,6 +14,7 @@ import LockIcon from '@mui/icons-material/Lock'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import { login, fetchBootstrapStatus, isEmailVerified } from '../services/api'
 import BootstrapForm from '../components/BootstrapForm'
+import { homePathFor } from '../components/Header'
 
 /**
  * Login page - exchange username + password for a session token.
@@ -38,10 +39,11 @@ export default function Login () {
   const [created, setCreated] = useState(false)
 
   // Redirect authenticated users into the app; accounts with an unverified
-  // email address go to the verification page instead of the users page.
+  // email address go to the verification page instead. Students land on
+  // Projects (their read-only view), everyone else on Users.
   useEffect(() => {
     if (user) {
-      navigate(isEmailVerified(user) ? '/users' : '/verify')
+      navigate(isEmailVerified(user) ? homePathFor(user) : '/verify')
     }
   }, [user, navigate])
 
@@ -62,7 +64,7 @@ export default function Login () {
       // Refresh the auth context so route guards recognize us as logged in;
       // accounts with an unverified email address must verify first.
       setUser(userData)
-      navigate(isEmailVerified(userData) ? '/users' : '/verify')
+      navigate(isEmailVerified(userData) ? homePathFor(userData) : '/verify')
     } catch (err) {
       setError(err.message)
     } finally {

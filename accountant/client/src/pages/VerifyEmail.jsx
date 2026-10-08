@@ -12,6 +12,7 @@ import {
 } from '@mui/material'
 import MailOutlinedIcon from '@mui/icons-material/MailOutlined'
 import { verifyEmail, resendVerification, fetchCurrentUser, isEmailVerified } from '../services/api'
+import { homePathFor } from '../components/Header'
 
 /**
  * Email verification page - the target of the link in the verification email.
@@ -154,8 +155,8 @@ export default function VerifyEmail () {
         <Alert severity='success' sx={{ mb: 2 }}>
           Your email address is already verified.
         </Alert>
-        <Button component={Link} to='/users' variant='contained' size='large'>
-          Go to Users
+        <Button component={Link} to={homePathFor(user)} variant='contained' size='large'>
+          {user.type === 'STUDENT' ? 'Go to Projects' : 'Go to Users'}
         </Button>
       </>
     )

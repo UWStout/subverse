@@ -63,11 +63,14 @@ describe('Header', () => {
   // expose role="link"; the theme toggle and (when authenticated) the account
   // menu avatar are real buttons.
 
-  it('shows the brand and the Users link for everyone', () => {
+  it('shows the brand and Projects for anonymous visitors (role-gated links stay hidden)', () => {
     renderHeader(null)
 
     expect(screen.getByText('Accountant')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
+    // Role-restricted links (Users, Offerings) are only shown to matching
+    // authenticated roles - same rule as Offerings.
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument()
   })
 
   it('shows a Login link (no account menu) when anonymous', () => {
@@ -75,6 +78,47 @@ describe('Header', () => {
 
     expect(screen.getByRole('link', { name: 'Login' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Account menu' })).not.toBeInTheDocument()
+  })
+
+  // The Users link is hidden from students - they manage their own account
+  // through the avatar menu's "Edit Account" option instead.
+  it('hides the Users link from students (Projects stays visible)', () => {
+    renderHeader(STUDENT)
+
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument()
+  })
+
+  it('shows the Users link for teachers', () => {
+    renderHeader(TEACHER)
+
+    expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
+  })
+
+  it('shows the Users link for admins', () => {
+    renderHeader(ADMIN)
+
+    expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
+  })
+
+  // The brand links to the user's home page - students land on Projects,
+  // everyone else (including anonymous visitors) on Users.
+  it('points the brand at /projects for students', () => {
+    renderHeader(STUDENT)
+
+    expect(screen.getByRole('link', { name: 'Accountant' })).toHaveAttribute('href', '/projects')
+  })
+
+  it('points the brand at /users for teachers', () => {
+    renderHeader(TEACHER)
+
+    expect(screen.getByRole('link', { name: 'Accountant' })).toHaveAttribute('href', '/users')
+  })
+
+  it('points the brand at /users for anonymous visitors', () => {
+    renderHeader(null)
+
+    expect(screen.getByRole('link', { name: 'Accountant' })).toHaveAttribute('href', '/users')
   })
 
   it('shows an account menu button (no Login) when authenticated', () => {
