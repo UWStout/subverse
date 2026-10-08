@@ -1,9 +1,12 @@
 /* eslint-disable camelcase */
+import { randomBytes } from 'crypto'
 import bcrypt from 'bcryptjs'
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
 import { authenticate, requireVerified } from '../middleware/auth.js'
+import { parseBulkEntries } from '../bulk-create.js'
 import { generateVerificationToken, deliverVerificationEmail } from '../verification.js'
+import { deliverSetPasswordEmail } from '../password-reset.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -266,6 +269,155 @@ userRouter.post('/create', async (req, res) => {
   } catch (err) {
     console.error('Error creating user:', err)
     res.status(500).json({ error: 'Failed to create user' })
+  }
+})
+
+// Route to create many users at once from a pasted "Name <email>" roster and
+// assign every account to one project (issue #3). Existing accounts that
+// match on BOTH username and email are reused as-is; unknown people get a
+// password-less account plus an emailed link to set their first password.
+// Conflicts (username or email matches, but not both) are reported per entry.
+userRouter.post('/bulk-create', async (req, res) => {
+  try {
+    // Students cannot create accounts at all
+    if (req.user.type === 'STUDENT') {
+      return res.status(403).json({ error: 'Students cannot create users' })
+    }
+
+    const { project_id, entries } = req.body
+    if (!project_id || typeof entries !== 'string' || !entries.trim()) {
+      return res.status(400).json({ error: 'Missing required fields: project_id and entries (a pasted "Name <email>" list)' })
+    }
+
+    const projectId = parseInt(project_id, 10)
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' })
+    }
+
+    // Verify the project exists
+    const project = await getDb().project.findUnique({ where: { id: projectId } })
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    // Teachers may only bulk-create for projects in offerings they teach
+    if (req.user.type === 'TEACHER') {
+      const offering = await getDb().offering.findUnique({ where: { id: project.offering_id } })
+      if (!offering || offering.teacher_id !== req.user.sub) {
+        return res.status(403).json({ error: 'Teachers can only add users to projects in classes they teach' })
+      }
+    }
+
+    const parsed = parseBulkEntries(entries)
+    if (parsed.entries.length === 0) {
+      return res.status(400).json({ error: 'No valid entries found', details: parsed.errors })
+    }
+
+    // Process each entry independently so one bad row does not stop the rest.
+    // Individual writes are small and idempotent, so a retried batch is safe.
+    const results = []
+    const errors = [...parsed.errors]
+    let created = 0
+    let assigned = 0
+    let alreadyAssigned = 0
+    const pendingEmails = []
+
+    for (const entry of parsed.entries) {
+      // Accounts claiming this username or email. To be reused, an account
+      // must match on BOTH fields; anything less is a conflict. SQLite has no
+      // case-insensitive filter in Prisma, so match with LOWER() in SQL.
+      const matches = await getDb().$queryRaw`
+        SELECT id, username, email FROM users
+        WHERE LOWER(username) = LOWER(${entry.username})
+           OR LOWER(email) = LOWER(${entry.email})
+      `
+      const byUsername = matches.find(u => u.username.toLowerCase() === entry.username.toLowerCase())
+      const byEmail = matches.find(u => u.email.toLowerCase() === entry.email.toLowerCase())
+
+      let user = null
+      let isNew = false
+      if (byUsername && byEmail) {
+        if (byUsername.id === byEmail.id) {
+          user = byUsername // full match - reuse the existing account
+        } else {
+          errors.push({
+            index: entry.index,
+            raw: entry.raw,
+            reason: `Username '${entry.username}' belongs to ${byUsername.username} (${byUsername.email}) but email '${entry.email}' belongs to ${byEmail.username} (${byEmail.email})`
+          })
+        }
+      } else if (byUsername || byEmail) {
+        const clash = byUsername || byEmail
+        const field = byUsername ? `Username '${entry.username}'` : `Email '${entry.email}'`
+        errors.push({ index: entry.index, raw: entry.raw, reason: `${field} already belongs to ${clash.username} (${clash.email})` })
+      }
+
+      if (!user && !byUsername && !byEmail) {
+        // No existing account: create one without a usable password (a hash
+        // of a random secret, so no guess can ever log in) and queue the
+        // set-password email. The account is not provisional - setting the
+        // password via the emailed link is all that is required.
+        const resetToken = generateVerificationToken()
+        const placeholderHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10)
+        user = await getDb().user.create({
+          data: {
+            username: entry.username,
+            email: entry.email,
+            password_hash: placeholderHash,
+            type: 'STUDENT',
+            first_name: entry.first_name,
+            last_name: entry.last_name,
+            reset_token: resetToken,
+            reset_sent_at: new Date()
+          }
+        })
+        isNew = true
+        created++
+        pendingEmails.push({ user, token: resetToken })
+      }
+
+      if (!user) continue // conflict - nothing to assign
+
+      // Assign the account to the project (idempotent)
+      const existingAssignment = await getDb().assignment.findUnique({
+        where: { student_id_project_id: { student_id: user.id, project_id: projectId } }
+      })
+      if (existingAssignment) {
+        alreadyAssigned++
+        results.push({ index: entry.index, raw: entry.raw, status: 'already-assigned' })
+      } else {
+        await getDb().assignment.create({ data: { student_id: user.id, project_id: projectId } })
+        if (isNew) {
+          results.push({ index: entry.index, raw: entry.raw, status: 'created' })
+        } else {
+          assigned++
+          results.push({ index: entry.index, raw: entry.raw, status: 'assigned' })
+        }
+      }
+    }
+
+    // Best-effort delivery of the set-password emails. A failed send leaves
+    // the reset token in the database, so the account can recover through
+    // the normal forgot-password flow.
+    const emailFailures = []
+    for (const { user, token } of pendingEmails) {
+      const sent = await deliverSetPasswordEmail(user, token)
+      if (!sent) emailFailures.push(user.email)
+    }
+
+    res.json({
+      project_id: projectId,
+      total: results.length + errors.length,
+      created,
+      assigned,
+      already_assigned: alreadyAssigned,
+      results,
+      errors,
+      email_failures: emailFailures
+    })
+  } catch (err) {
+    console.error('Error bulk creating users:', err)
+    res.status(500).json({ error: 'Failed to bulk create users' })
   }
 })
 

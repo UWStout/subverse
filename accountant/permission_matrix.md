@@ -8,6 +8,7 @@ Below are tables that explain the different permissions for various routes affor
 | `GET /user/check/:username/:email` | ✅  | ✅ | ✅  |
 | `GET /user/:id`| ⚠️ Own account only (`id === sub`) | ✅ | ✅ |
 | `POST /user/create`| ❌ 403 | ⚠️ STUDENT or TEACHER only - **never ADMIN** | ✅ any type |
+| `POST /user/bulk-create` | ❌ 403 | ⚠️ Projects in offerings they teach only (new accounts are always STUDENT) | ✅ Any project |
 | `POST /user/update/:id` | ⚠️ Own account only (`id === sub`); no type changes | ⚠️ Student accounts or own account only; no type changes | ✅ Any target; may change type (last-admin guard applies) |
 | `DELETE /user/:id`| ❌ 403 | ⚠️ STUDENT or TEACHER targets only - **never ADMIN** | ✅ Any target (last-admin guard applies) |
 

@@ -92,6 +92,39 @@ export async function sendVerificationEmail (user, token) {
 }
 
 /**
+ * Send a "set your password" message for a freshly created account that has
+ * no usable password yet (bulk creation, issue #3). The link works through
+ * the standard /reset-password flow, which sets the account's first password.
+ */
+export async function sendSetPasswordEmail (user, token) {
+  const url = buildResetUrl(token)
+  const firstName = user.first_name || user.username
+
+  return getTransporter().sendMail({
+    from: `"${APP_NAME}" <${getFromAddress()}>`,
+    to: user.email,
+    subject: 'Set your password',
+    text: [
+      `Hi ${firstName},`,
+      '',
+      `An account was created for you on the ${APP_NAME} system.`,
+      'Your account has no password yet; open the link below to set one:',
+      '',
+      url,
+      '',
+      'You will not be able to sign in until you have set a password.'
+    ].join('\n'),
+    html: [
+      `<p>Hi ${firstName},</p>`,
+      `<p>An account was created for you on the ${APP_NAME} system.</p>`,
+      '<p>Your account has no password yet; open the link below to set one:</p>',
+      `<p><a href="${url}">${url}</a></p>`,
+      '<p>You will not be able to sign in until you have set a password.</p>'
+    ].join('\n')
+  })
+}
+
+/**
  * Send a password-reset message containing the reset link for the given
  * token to the user's address.
  */

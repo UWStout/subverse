@@ -97,6 +97,30 @@ export async function createUser ({ username, email, password, type, firstName, 
   return res.json() // { user: ... }
 }
 
+/**
+ * POST /user/bulk-create - create accounts in bulk from a pasted roster and
+ * assign every account to one project (issue #3). `entries` is the raw pasted
+ * text: segments of "Last, First <email>" or "First Last <email>" separated by
+ * newlines, semicolons, or commas (auto-detected server-side). Existing
+ * accounts that match on both username and email are assigned as-is; unknown
+ * people get a password-less account plus an emailed link to set their
+ * password. Returns { total, created, assigned, already_assigned, results,
+ * errors, email_failures }.
+ */
+export async function bulkCreateUsers (projectId, entries) {
+  const res = await fetch(`${BASE}/user/bulk-create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ project_id: projectId, entries })
+  })
+  if (!res.ok) {
+    handleUnauthorized(res)
+    const err = await res.json().catch(() => ({ error: 'Failed to bulk create users' }))
+    throw new Error(err.error || 'Request failed')
+  }
+  return res.json()
+}
+
 /** POST /user/update/:id */
 export async function updateUser (id, { username, email, password, type, firstName, lastName }) {
   const res = await fetch(`${BASE}/user/update/${id}`, {

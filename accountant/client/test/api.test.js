@@ -4,6 +4,7 @@ import {
   fetchUser,
   checkAvailability,
   createUser,
+  bulkCreateUsers,
   updateUser,
   deleteUser,
   fetchOfferings,
@@ -197,6 +198,35 @@ describe('services/api', () => {
       fetch.mockResolvedValueOnce(jsonResponse({ error: 'Username already in use' }, false))
 
       await expect(createUser({ username: 'a', email: 'b@c.d', password: 'p', type: 'STUDENT' })).rejects.toThrow('Username already in use')
+    })
+  })
+
+  describe('bulkCreateUsers', () => {
+    it('posts the project id and raw roster text to /user/bulk-create', async () => {
+      setToken('tok123')
+      const summary = { total: 2, created: 1, assigned: 1, already_assigned: 0, results: [], errors: [], email_failures: [] }
+      fetch.mockResolvedValueOnce(jsonResponse(summary))
+
+      const res = await bulkCreateUsers(4, 'Doe, John <jdoe@x.edu>\nSmith, Jane <jsmith@x.edu>')
+
+      expect(fetch).toHaveBeenCalledWith('/user/bulk-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok123' },
+        body: JSON.stringify({ project_id: 4, entries: 'Doe, John <jdoe@x.edu>\nSmith, Jane <jsmith@x.edu>' })
+      })
+      expect(res).toEqual(summary)
+    })
+
+    it('throws the server-provided error message on failure', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'No valid entries found' }, false))
+
+      await expect(bulkCreateUsers(4, 'garbage')).rejects.toThrow('No valid entries found')
+    })
+
+    it('falls back to a default message when the error body is not JSON', async () => {
+      fetch.mockResolvedValueOnce(badJsonResponse())
+
+      await expect(bulkCreateUsers(4, 'garbage')).rejects.toThrow('Failed to bulk create users')
     })
   })
 
