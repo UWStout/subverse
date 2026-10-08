@@ -32,6 +32,7 @@ function renderLogin (user = null) {
       <Routes>
         <Route path='/login' element={<Login />} />
         <Route path='/users' element={<div>Users page</div>} />
+        <Route path='/projects' element={<div>Projects page</div>} />
         <Route path='/verify' element={<div>Verify page</div>} />
         <Route path='/forgot-password' element={<ForgotPassword />} />
       </Routes>
@@ -130,6 +131,18 @@ describe('Login page', () => {
 
     expect(await screen.findByText('Users page')).toBeInTheDocument()
     expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
+  })
+
+  it('redirects a newly logged-in student to the projects page', async () => {
+    login.mockResolvedValue({ id: 2, username: 'student', type: 'STUDENT' })
+    renderLogin()
+
+    await user.type(await screen.findByLabelText('Username'), 'testuser')
+    await user.type(screen.getByLabelText('Password'), 'password')
+    await user.click(screen.getByRole('button', { name: 'Sign In' }))
+
+    expect(await screen.findByText('Projects page')).toBeInTheDocument()
+    expect(screen.queryByText('Users page')).not.toBeInTheDocument()
   })
 
   // ---- Bootstrap mode (server has no accounts yet) ----

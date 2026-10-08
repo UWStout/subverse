@@ -10,7 +10,23 @@ import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import PrivateRoute from './components/PrivateRoute'
 import NotFound from './pages/NotFound'
+import { useAuth } from './context/AuthContext'
+import { homePathFor } from './components/Header'
 import './index.css'
+
+/**
+ * Root is an alias for the user's home page (guards apply as usual):
+ * students go to /projects, everyone else to /users. Waits for the session
+ * check so a refreshing student isn't bounced onto the users page first.
+ */
+function HomeRedirect () {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return <div>Loading...</div>
+  }
+  return <Navigate to={homePathFor(user)} replace />
+}
 
 function App () {
   return (
@@ -19,7 +35,7 @@ function App () {
         <AuthProvider>
           <Routes>
             {/* Root is an alias for the home page (guards apply as usual) */}
-            <Route path='/' element={<Navigate to='/users' replace />} />
+            <Route path='/' element={<HomeRedirect />} />
             <Route path='/login' element={<Login />} />
             {/* Public: target of the emailed verification link (?token=...) */}
             <Route path='/verify' element={<VerifyEmail />} />

@@ -71,6 +71,25 @@ describe('App', () => {
     expect(screen.queryByText('User Accounts')).not.toBeInTheDocument()
   })
 
+  it('redirects an authenticated admin at the root to the users page', async () => {
+    fetchCurrentUser.mockResolvedValue(ADMIN)
+
+    visit('/')
+    render(<App />)
+
+    expect(await screen.findByText('User Accounts')).toBeInTheDocument()
+  })
+
+  it('redirects an authenticated student at the root to the projects page', async () => {
+    fetchCurrentUser.mockResolvedValue(STUDENT)
+
+    visit('/')
+    render(<App />)
+
+    expect(await screen.findByText('Class Projects')).toBeInTheDocument()
+    expect(screen.queryByText('User Accounts')).not.toBeInTheDocument()
+  })
+
   it('shows the users page for an authenticated admin', async () => {
     fetchCurrentUser.mockResolvedValue(ADMIN)
 

@@ -11,8 +11,9 @@ vi.mock('../src/context/AuthContext', () => ({
 
 const TEACHER = { id: 1, username: 'prof', type: 'TEACHER' }
 const STUDENT = { id: 2, username: 'student', type: 'STUDENT' }
+const ADMIN = { id: 3, username: 'admin', type: 'ADMIN' }
 
-/** Render a role-gated route plus /login and /users fallbacks. */
+/** Render a role-gated route plus /login, /users and /projects fallbacks. */
 function renderGated (auth) {
   useAuth.mockReturnValue(auth)
   return render(
@@ -20,6 +21,7 @@ function renderGated (auth) {
       <Routes>
         <Route path='/gated' element={<RequireRole roles={['TEACHER']}><div>Gated content</div></RequireRole>} />
         <Route path='/users' element={<div>Users page</div>} />
+        <Route path='/projects' element={<div>Projects page</div>} />
         <Route path='/login' element={<div>Login page</div>} />
       </Routes>
     </MemoryRouter>
@@ -45,10 +47,18 @@ describe('RequireRole', () => {
     expect(screen.queryByText('Gated content')).not.toBeInTheDocument()
   })
 
-  it('redirects authenticated users without an allowed role to /users', () => {
-    renderGated({ user: STUDENT, loading: false })
+  it('redirects authenticated non-student users without an allowed role to /users', () => {
+    renderGated({ user: ADMIN, loading: false })
 
     expect(screen.getByText('Users page')).toBeInTheDocument()
+    expect(screen.queryByText('Gated content')).not.toBeInTheDocument()
+  })
+
+  it('redirects students without an allowed role to /projects (their home)', () => {
+    renderGated({ user: STUDENT, loading: false })
+
+    expect(screen.getByText('Projects page')).toBeInTheDocument()
+    expect(screen.queryByText('Users page')).not.toBeInTheDocument()
     expect(screen.queryByText('Gated content')).not.toBeInTheDocument()
   })
 
