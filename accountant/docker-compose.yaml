@@ -9,6 +9,11 @@ services:
       - .:/usr/src/app
       - /usr/src/app/node_modules
       - accountant-data:/usr/src/app/data
+      # Docker API access so the service can manage the SVN container
+      # (server/docker.js + server/subversion.js). Grants control over all
+      # host containers - acceptable here since Portainer already runs with
+      # equivalent access. Remove if you never deploy accountant in a container.
+      - /var/run/docker.sock:/var/run/docker.sock
 
     networks:
       - traefik

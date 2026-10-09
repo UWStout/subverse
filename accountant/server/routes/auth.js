@@ -7,6 +7,7 @@ import { authenticate, requireVerified, JWT_SECRET, TOKEN_TTL } from '../middlew
 import { verifyBootstrapToken } from '../bootstrap.js'
 import { generateVerificationToken, deliverVerificationEmail, verifyEmailByToken, reissueVerificationToken } from '../verification.js'
 import { requestPasswordReset, deliverPasswordResetEmail, resetPasswordByToken } from '../password-reset.js'
+import { setUserPassword, bestEffortSvn } from '../subversion.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -112,6 +113,9 @@ authRouter.post('/bootstrap', async (req, res) => {
     // Best-effort: the account stays provisional (locked out) if delivery fails.
     await deliverVerificationEmail(user, verificationToken)
 
+    // Sync the new credentials into the SVN passwd file.
+    await bestEffortSvn(`bootstrap user '${username}'`, () => setUserPassword(username, password))
+
     console.log(`Bootstrap complete: initial ADMIN account '${username}' created`)
     res.status(201).json({ message: 'Initial admin account created', user: sanitizeUser(user) })
   } catch (err) {
@@ -195,6 +199,11 @@ authRouter.post('/reset-password', async (req, res) => {
     }
 
     console.log(`Password reset for user '${result.user.username}' (${result.user.email})`)
+
+    // The new password must replace the old entry in the SVN passwd file (or
+    // be created, e.g. for a bulk-created account setting its first password).
+    await bestEffortSvn(`reset password for '${result.user.username}'`, () => setUserPassword(result.user.username, password))
+
     res.json({ message: 'Password has been reset successfully' })
   } catch (err) {
     console.error('Error resetting password:', err)

@@ -2,6 +2,14 @@
 import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
 import { authenticate, requireVerified } from '../middleware/auth.js'
+import { createRepository, synchronizeRepositoryAccess, renameRepository, deleteRepository, bestEffortSvn } from '../subversion.js'
+
+// Fetch a project with the relations the SVN sync helpers need
+// (assigned students + offering teacher usernames).
+const SVN_SYNC_INCLUDE = {
+  assignments: { include: { student: { select: { username: true } } } },
+  offering: { include: { teacher: { select: { username: true } } } }
+}
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -106,6 +114,15 @@ projectRouter.post('/create', async (req, res) => {
       }
     })
 
+    // Mirror the new project into the SVN server: create the repository with
+    // its standard structure and default properties, then sync access so the
+    // offering teacher already has r/w.
+    await bestEffortSvn(`create project '${slug}'`, async () => {
+      await createRepository(project)
+      const full = await getDb().project.findUnique({ where: { id: project.id }, include: SVN_SYNC_INCLUDE })
+      await synchronizeRepositoryAccess(full)
+    })
+
     res.status(201).json(project)
   } catch (err) {
     console.error('Error creating project:', err)
@@ -174,6 +191,17 @@ projectRouter.post('/update/:id', async (req, res) => {
         ...(description !== undefined && { description }),
         ...(offering_id !== undefined && { offering_id: parseInt(offering_id, 10) })
       }
+    })
+
+    // Mirror the change into the SVN server. A slug change renames the repo
+    // (history preserved); any update re-syncs access because the project may
+    // have moved to a different offering / teacher.
+    await bestEffortSvn(`update project ${id}`, async () => {
+      if (slug !== undefined && slug !== existing.slug) {
+        await renameRepository(existing.slug, slug)
+      }
+      const full = await getDb().project.findUnique({ where: { id }, include: SVN_SYNC_INCLUDE })
+      await synchronizeRepositoryAccess(full)
     })
 
     res.json(updated)
@@ -352,6 +380,9 @@ projectRouter.delete('/:id', async (req, res) => {
     await getDb().assignment.deleteMany({ where: { project_id: id } })
 
     await getDb().project.delete({ where: { id } })
+
+    // Remove the repository and drop the project's group from the authz file.
+    await bestEffortSvn(`delete project '${existing.slug}'`, () => deleteRepository(existing.slug))
 
     res.json({ message: 'Project deleted successfully' })
   } catch (err) {

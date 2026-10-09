@@ -142,6 +142,27 @@ vi.doMock(mailerPath, () => ({
 }))
 
 // ---------------------------------------------------------------------------
+// Mock the SVN sync module - route tests must never talk to a real Docker
+// daemon. The functions are no-ops by default; individual tests can assert on
+// them via mockSubversion. (The dedicated subversion.test.js mocks docker.js
+// itself and exercises the real sync logic.)
+// ---------------------------------------------------------------------------
+const subversionPath = path.resolve(__dirname, '..', 'subversion.js')
+
+export const mockSubversion = {
+  createRepository: vi.fn().mockResolvedValue(undefined),
+  synchronizeRepositoryAccess: vi.fn().mockResolvedValue(undefined),
+  renameRepository: vi.fn().mockResolvedValue(undefined),
+  deleteRepository: vi.fn().mockResolvedValue(undefined),
+  setUserPassword: vi.fn().mockResolvedValue(undefined),
+  removeUser: vi.fn().mockResolvedValue(undefined),
+  // Mirrors production semantics: sync failures are swallowed, never thrown.
+  bestEffortSvn: async (label, fn) => { try { await fn() } catch { /* logged in prod */ } }
+}
+
+vi.doMock(subversionPath, () => ({ ...mockSubversion }))
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

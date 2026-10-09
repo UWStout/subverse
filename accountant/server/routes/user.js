@@ -7,6 +7,14 @@ import { authenticate, requireVerified } from '../middleware/auth.js'
 import { parseBulkEntries } from '../bulk-create.js'
 import { generateVerificationToken, deliverVerificationEmail } from '../verification.js'
 import { deliverSetPasswordEmail } from '../password-reset.js'
+import { setUserPassword, removeUser, synchronizeRepositoryAccess, bestEffortSvn } from '../subversion.js'
+
+// Fetch a project with the relations the SVN sync helpers need
+// (assigned students + offering teacher usernames).
+const SVN_SYNC_INCLUDE = {
+  assignments: { include: { student: { select: { username: true } } } },
+  offering: { include: { teacher: { select: { username: true } } } }
+}
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
 let db
@@ -264,6 +272,10 @@ userRouter.post('/create', async (req, res) => {
     // Best-effort: the account stays provisional (locked out) if delivery fails.
     await deliverVerificationEmail(user, verificationToken)
 
+    // Sync the new credentials into the SVN passwd file so the account can
+    // authenticate against the gateway as soon as it exists.
+    await bestEffortSvn(`create user '${user.username}'`, () => setUserPassword(user.username, password))
+
     // Return the newly created user (with sensitive info removed)
     res.status(201).json({ user: sanitizeUser(user) })
   } catch (err) {
@@ -405,6 +417,14 @@ userRouter.post('/bulk-create', async (req, res) => {
       if (!sent) emailFailures.push(user.email)
     }
 
+    // Assignments changed: re-sync the project's SVN access so every new
+    // member is in the group. (New accounts get their passwd entry later, when
+    // they set their first password through the emailed link.)
+    await bestEffortSvn(`bulk-create on project ${projectId}`, async () => {
+      const full = await getDb().project.findUnique({ where: { id: projectId }, include: SVN_SYNC_INCLUDE })
+      if (full) await synchronizeRepositoryAccess(full)
+    })
+
     res.json({
       project_id: projectId,
       total: results.length + errors.length,
@@ -519,6 +539,12 @@ userRouter.post('/update/:id', async (req, res) => {
       data: updateData
     })
 
+    // A password change must reach the SVN passwd file, otherwise the old
+    // credentials keep working on the gateway.
+    if (password) {
+      await bestEffortSvn(`update user '${updatedUser.username}'`, () => setUserPassword(updatedUser.username, password))
+    }
+
     res.json({ user: sanitizeUser(updatedUser) })
   } catch (err) {
     console.error('Error updating user:', err)
@@ -558,6 +584,13 @@ userRouter.delete('/:id', async (req, res) => {
       }
     }
 
+    // Remember which projects this student was on before the rows go away -
+    // the SVN sync below needs them.
+    const memberships = await getDb().assignment.findMany({
+      where: { student_id: id },
+      select: { project_id: true }
+    })
+
     // Delete associated assignments (cascade on user delete handles this,
     // but we do it explicitly for clarity and to satisfy the test expectation)
     await getDb().assignment.deleteMany({ where: { student_id: id } })
@@ -566,6 +599,16 @@ userRouter.delete('/:id', async (req, res) => {
     // Those offerings' projects and their assignments are also cascaded.
 
     await getDb().user.delete({ where: { id } })
+
+    // Revoke the account's SVN credentials (and drop it from any project
+    // groups while we are at it).
+    await bestEffortSvn(`delete user '${existing.username}'`, async () => {
+      await removeUser(existing.username)
+      for (const membership of memberships) {
+        const full = await getDb().project.findUnique({ where: { id: membership.project_id }, include: SVN_SYNC_INCLUDE })
+        if (full) await synchronizeRepositoryAccess(full)
+      }
+    })
 
     res.json({ message: 'User deleted successfully' })
   } catch (err) {
