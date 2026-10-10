@@ -1,8 +1,20 @@
 {
     "cSpell.words": [
+        "addext",
         "autoincrement",
         "Berrier",
         "demux",
-        "hashedpassword"
+        "enabledelayedexpansion",
+        "endlocal",
+        "errorlevel",
+        "findstr",
+        "fsutil",
+        "hashedpassword",
+        "keyout",
+        "newkey",
+        "setlocal",
+        "subverse",
+        "systemdrive",
+        "usebackq"
     ]
 }

@@ -1,0 +1,22 @@
+# Local development overrides - NOT used in production.
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build
+#
+# - Replaces the external 'traefik' network (which only exists on the
+#   deployment host) with a local project-scoped one.
+# - Publishes port 3000 (API) and 5173 (Vite dev server with hot reload;
+#   it proxies /auth/, /user/, /class/, /offering/, /project/ to the API).
+#   Vite is started with --host because it binds to loopback by default,
+#   which would be unreachable through Docker's port publishing.
+services:
+  accountant-api:
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    # `npm run db:push` first: this command bypasses npm lifecycle scripts, so
+    # the predev hook does not fire here. The push is idempotent (no-op when
+    # the schema already matches).
+    command: npm run db:push && npx concurrently "npm run dev:client -- --host" "npm run dev:server"
+
+networks:
+  traefik:
+    external: false

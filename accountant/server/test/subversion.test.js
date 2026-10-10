@@ -54,51 +54,39 @@ beforeEach(() => {
 // Pure config builders
 // ---------------------------------------------------------------------------
 
-describe('passwdLine / sha1Hash', () => {
-  it('produces a stable {SHA} htpasswd line', () => {
-    expect(subversion.passwdLine('bob', 'password')).toBe('bob:{SHA}W6ph5Mm5Pz8GgiULbPgzG37mj9g=')
-    expect(subversion.sha1Hash('hunter2')).toBe('{SHA}87u9ZqY9S/F0eUBXjsPQEDUw4h0=')
-  })
-
-  it('differs for different passwords and is deterministic', () => {
-    expect(subversion.passwdLine('bob', 'one')).not.toBe(subversion.passwdLine('bob', 'two'))
-    expect(subversion.passwdLine('bob', 'one')).toBe(subversion.passwdLine('bob', 'one'))
-  })
-})
-
 describe('upsertPasswdLine', () => {
   it('appends a new user to existing content', () => {
-    const next = subversion.upsertPasswdLine('alice:{SHA}aaa\n', 'bob', '{SHA}bbb')
-    expect(next).toBe('alice:{SHA}aaa\nbob:{SHA}bbb\n')
+    const next = subversion.upsertPasswdLine('alice:$2a$10$alicehash\n', 'bob', '$2a$10$bobhash')
+    expect(next).toBe('alice:$2a$10$alicehash\nbob:$2a$10$bobhash\n')
   })
 
   it('replaces an existing user in place, keeping the other lines', () => {
-    const next = subversion.upsertPasswdLine('alice:{SHA}aaa\nbob:{SHA}old\ncarol:{SHA}ccc\n', 'bob', '{SHA}new')
-    expect(next).toBe('alice:{SHA}aaa\nbob:{SHA}new\ncarol:{SHA}ccc\n')
+    const next = subversion.upsertPasswdLine('alice:$2a$10$alicehash\nbob:$2a$10$oldhash\ncarol:$2a$10$carolhash\n', 'bob', '$2a$10$newhash')
+    expect(next).toBe('alice:$2a$10$alicehash\nbob:$2a$10$newhash\ncarol:$2a$10$carolhash\n')
   })
 
   it('handles empty content', () => {
-    expect(subversion.upsertPasswdLine('', 'bob', '{SHA}bbb')).toBe('bob:{SHA}bbb\n')
+    expect(subversion.upsertPasswdLine('', 'bob', '$2a$10$bobhash')).toBe('bob:$2a$10$bobhash\n')
   })
 })
 
 describe('removePasswdLine', () => {
   it('removes the matching user and reports it', () => {
-    const { content, removed } = subversion.removePasswdLine('alice:{SHA}aaa\nbob:{SHA}bbb\n', 'bob')
+    const { content, removed } = subversion.removePasswdLine('alice:$2a$10$alicehash\nbob:$2a$10$bobhash\n', 'bob')
     expect(removed).toBe(true)
-    expect(content).toBe('alice:{SHA}aaa\n')
+    expect(content).toBe('alice:$2a$10$alicehash\n')
   })
 
   it('reports no removal when the user is absent', () => {
-    const { content, removed } = subversion.removePasswdLine('alice:{SHA}aaa\n', 'bob')
+    const { content, removed } = subversion.removePasswdLine('alice:$2a$10$alicehash\n', 'bob')
     expect(removed).toBe(false)
-    expect(content).toBe('alice:{SHA}aaa\n')
+    expect(content).toBe('alice:$2a$10$alicehash\n')
   })
 })
 
 describe('parsePasswdUsernames', () => {
   it('extracts usernames and skips comments / blanks', () => {
-    const content = '# comment\n\nalice:{SHA}aaa\nbob:{SHA}bbb\n'
+    const content = '# comment\n\nalice:$2a$10$alicehash\nbob:$2a$10$bobhash\n'
     expect(subversion.parsePasswdUsernames(content)).toEqual(['alice', 'bob'])
   })
 
@@ -333,9 +321,27 @@ describe('synchronizeRepositoryAccess', () => {
     }
   ]
 
+  /** Member accounts as the database would return them for the final-project team. */
+  const memberAccounts = [
+    { username: 'lellison', password_hash: '$2a$10$lellisonhash' },
+    { username: 'lito', password_hash: '$2a$10$litohash' }
+  ]
+
+  /**
+   * Route user.findMany by query shape: the admins lookup filters on
+   * `type: 'ADMIN'`, the member-credentials lookup on `username.in`.
+   */
+  function mockUserLookups (admins = [], accounts = []) {
+    mockPrisma.user.findMany.mockImplementation(({ where } = {}) => {
+      if (where?.type === 'ADMIN') return Promise.resolve(admins)
+      return Promise.resolve(accounts)
+    })
+  }
+
   it('rebuilds the authz file from the full database state', async () => {
-    mockContainerFiles({ [PASSWD_FILE]: 'lellison:{SHA}x\nlito:{SHA}y\nsberrier:{SHA}z\n' })
+    mockContainerFiles({ [PASSWD_FILE]: 'lellison:$2a$10$lellisonhash\nlito:$2a$10$litohash\n' })
     mockPrisma.project.findMany.mockResolvedValue(dbProjects)
+    mockUserLookups([], memberAccounts)
 
     await subversion.synchronizeRepositoryAccess({ slug: 'final-project' })
 
@@ -345,10 +351,32 @@ describe('synchronizeRepositoryAccess', () => {
     expect(content).toContain('[/final-project]\n@final-project = rw')
   })
 
-  it('includes ADMIN users from the database in the admins group', async () => {
-    mockContainerFiles({ [PASSWD_FILE]: 'lellison:{SHA}x\nlito:{SHA}y\nsberrier:{SHA}z\n' })
+  it('is a no-op for the passwd file when entries already match the database', async () => {
+    mockContainerFiles({ [PASSWD_FILE]: 'lellison:$2a$10$lellisonhash\nlito:$2a$10$litohash\n' })
     mockPrisma.project.findMany.mockResolvedValue(dbProjects)
-    mockPrisma.user.findMany.mockResolvedValue([{ username: 'berriers' }, { username: 'jdoe' }])
+    mockUserLookups([], memberAccounts)
+
+    await subversion.synchronizeRepositoryAccess({ slug: 'final-project' })
+
+    expect(writtenTo(PASSWD_FILE)).toBeUndefined()
+  })
+
+  it('syncs members\' hashes into the passwd file, adding missing entries and migrating legacy lines', async () => {
+    mockContainerFiles({ [PASSWD_FILE]: 'lellison:{SHA}legacy\nsberrier:$2a$10$sberrierhash\n' }) // lito missing
+    mockPrisma.project.findMany.mockResolvedValue(dbProjects)
+    mockUserLookups([], memberAccounts)
+
+    await subversion.synchronizeRepositoryAccess({ slug: 'final-project' })
+
+    expect(writtenTo(PASSWD_FILE)).toBe(
+      'lellison:$2a$10$lellisonhash\nsberrier:$2a$10$sberrierhash\nlito:$2a$10$litohash\n'
+    )
+  })
+
+  it('includes ADMIN users from the database in the admins group', async () => {
+    mockContainerFiles({ [PASSWD_FILE]: 'lellison:$2a$10$lellisonhash\nlito:$2a$10$litohash\n' })
+    mockPrisma.project.findMany.mockResolvedValue(dbProjects)
+    mockUserLookups([{ username: 'berriers' }, { username: 'jdoe' }], memberAccounts)
 
     await subversion.synchronizeRepositoryAccess({ slug: 'final-project' })
 
@@ -358,10 +386,11 @@ describe('synchronizeRepositoryAccess', () => {
     expect(content).not.toContain('* = r')
   })
 
-  it('warns about members missing from the passwd file', async () => {
+  it('warns about members that have no database account', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mockContainerFiles({ [PASSWD_FILE]: 'lellison:{SHA}x\n' }) // lito missing
+    mockContainerFiles({ [PASSWD_FILE]: 'lellison:$2a$10$lellisonhash\n' })
     mockPrisma.project.findMany.mockResolvedValue(dbProjects)
+    mockUserLookups([], memberAccounts.filter(a => a.username === 'lellison')) // lito has no account
 
     await subversion.synchronizeRepositoryAccess({ slug: 'final-project' })
 
@@ -370,15 +399,14 @@ describe('synchronizeRepositoryAccess', () => {
     warn.mockRestore()
   })
 
-  it('treats a missing passwd file as "no known users"', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  it('creates the passwd file when it does not exist yet', async () => {
     mockContainerFiles() // no passwd file at all
     mockPrisma.project.findMany.mockResolvedValue(dbProjects)
+    mockUserLookups([], memberAccounts)
 
     await subversion.synchronizeRepositoryAccess({ slug: 'final-project' })
 
-    expect(warn).toHaveBeenCalledTimes(2) // lellison + lito
-    warn.mockRestore()
+    expect(writtenTo(PASSWD_FILE)).toBe('lellison:$2a$10$lellisonhash\nlito:$2a$10$litohash\n')
   })
 
   it('rejects a missing or malformed slug', async () => {
@@ -392,28 +420,30 @@ describe('synchronizeRepositoryAccess', () => {
 // ---------------------------------------------------------------------------
 
 describe('setUserPassword', () => {
+  const BCRYPT_HASH = '$2a$10$abcdefghijklmnopqrstuv'
+
   it('adds a new user to the passwd file, preserving existing entries', async () => {
-    mockContainerFiles({ [PASSWD_FILE]: 'alice:{SHA}aaa\n' })
+    mockContainerFiles({ [PASSWD_FILE]: 'alice:$2a$10$alicehash\n' })
 
-    await subversion.setUserPassword('bob', 'password')
+    await subversion.setUserPassword('bob', BCRYPT_HASH)
 
-    expect(writtenTo(PASSWD_FILE)).toBe('alice:{SHA}aaa\nbob:{SHA}W6ph5Mm5Pz8GgiULbPgzG37mj9g=\n')
+    expect(writtenTo(PASSWD_FILE)).toBe(`alice:$2a$10$alicehash\nbob:${BCRYPT_HASH}\n`)
   })
 
   it('replaces an existing user when their password changes', async () => {
-    mockContainerFiles({ [PASSWD_FILE]: 'bob:{SHA}oldhash\n' })
+    mockContainerFiles({ [PASSWD_FILE]: 'bob:$2a$10$oldhash\n' })
 
-    await subversion.setUserPassword('bob', 'password')
+    await subversion.setUserPassword('bob', BCRYPT_HASH)
 
-    expect(writtenTo(PASSWD_FILE)).toBe('bob:{SHA}W6ph5Mm5Pz8GgiULbPgzG37mj9g=\n')
+    expect(writtenTo(PASSWD_FILE)).toBe(`bob:${BCRYPT_HASH}\n`)
   })
 
   it('creates the file when it does not exist yet', async () => {
     mockContainerFiles() // no passwd file
 
-    await subversion.setUserPassword('bob', 'password')
+    await subversion.setUserPassword('bob', BCRYPT_HASH)
 
-    expect(writtenTo(PASSWD_FILE)).toBe('bob:{SHA}W6ph5Mm5Pz8GgiULbPgzG37mj9g=\n')
+    expect(writtenTo(PASSWD_FILE)).toBe(`bob:${BCRYPT_HASH}\n`)
   })
 
   it('rejects invalid usernames or missing passwords', async () => {
@@ -422,25 +452,32 @@ describe('setUserPassword', () => {
     await expect(subversion.setUserPassword('bob', '')).rejects.toThrow(/password/i)
     expect(calls.length).toBe(0)
   })
+
+  it('refuses to write plaintext or legacy-format values', async () => {
+    await expect(subversion.setUserPassword('bob', 'hunter2')).rejects.toThrow(/bcrypt/i)
+    await expect(subversion.setUserPassword('bob', '{SHA}W6ph5Mm5Pz8GgiULbPgzG37mj9g=')).rejects.toThrow(/bcrypt/i)
+    await expect(subversion.setUserPassword('bob', '$apr1$JUtdOL.O$gc70nnNq4JxstytGe/HLQ1')).rejects.toThrow(/bcrypt/i)
+    expect(calls.length).toBe(0)
+  })
 })
 
 describe('removeUser', () => {
   it('removes the user and keeps the rest of the file', async () => {
-    mockContainerFiles({ [PASSWD_FILE]: 'alice:{SHA}aaa\nbob:{SHA}bbb\ncarol:{SHA}ccc\n' })
+    mockContainerFiles({ [PASSWD_FILE]: 'alice:$2a$10$alicehash\nbob:$2a$10$bobhash\ncarol:$2a$10$carolhash\n' })
 
     await subversion.removeUser('bob')
 
-    expect(writtenTo(PASSWD_FILE)).toBe('alice:{SHA}aaa\ncarol:{SHA}ccc\n')
+    expect(writtenTo(PASSWD_FILE)).toBe('alice:$2a$10$alicehash\ncarol:$2a$10$carolhash\n')
   })
 
   it('succeeds (no write needed for unknown users) when the user is absent', async () => {
-    mockContainerFiles({ [PASSWD_FILE]: 'alice:{SHA}aaa\n' })
+    mockContainerFiles({ [PASSWD_FILE]: 'alice:$2a$10$alicehash\n' })
 
     await subversion.removeUser('ghost')
 
     // The file is still rewritten with identical content - harmless and keeps
     // the code path uniform.
-    expect(writtenTo(PASSWD_FILE)).toBe('alice:{SHA}aaa\n')
+    expect(writtenTo(PASSWD_FILE)).toBe('alice:$2a$10$alicehash\n')
   })
 })
 

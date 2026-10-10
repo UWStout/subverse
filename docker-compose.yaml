@@ -9,6 +9,7 @@ include:
   - path: ./traefik/docker-compose.yaml
   - path: ./portainer/docker-compose.yaml
   - path: ./subversion/docker-compose.yaml
+  - path: ./accountant/docker-compose.yaml
 
 volumes:
   svn-root:
@@ -16,11 +17,11 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /volume1/subverse-data/svn-root
+      device: ${SVN_ROOT}
 
   gitlab-root:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /volume1/subverse-data/git-root
+      device: ${GIT_ROOT}

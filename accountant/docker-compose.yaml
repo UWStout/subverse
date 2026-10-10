@@ -2,17 +2,19 @@ services:
   accountant-api:
     build:
       context: .
-      target: development # change to 'production' when deployed
+      target: production # change to 'production' when deployed
     container_name: accountant-api
     restart: unless-stopped
-    volumes: # Remove when deployed
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
+    volumes:
       - accountant-data:/usr/src/app/data
       # Docker API access so the service can manage the SVN container
       # (server/docker.js + server/subversion.js). Grants control over all
       # host containers - acceptable here since Portainer already runs with
       # equivalent access. Remove if you never deploy accountant in a container.
+      # The app process runs as unprivileged 'node', which normally cannot
+      # connect to the socket directly (EACCES); docker-entrypoint.sh detects
+      # this and proxies the socket via socat, so no host-side configuration
+      # is required.
       - /var/run/docker.sock:/var/run/docker.sock
 
     networks:
@@ -29,6 +31,14 @@ services:
       traefik.http.routers.accountant.rule: "Host(`account.subverse`)"
       traefik.http.routers.accountant.entrypoints: "websecure"
       traefik.http.routers.accountant.tls: "true"
+
+# networks:
+#   # External network created by the Portainer-managed traefik stack on the
+#   # deployment host. Must be declared for compose to attach to it (and for
+#   # Compose v5 validation). For local development without a traefik network,
+#   # use docker-compose.dev.yaml which overrides this.
+#   traefik:
+#     external: true
 
 volumes:
   accountant-data:

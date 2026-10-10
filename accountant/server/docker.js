@@ -26,8 +26,12 @@ export async function execCommand (containerName, command, input = null) {
   let output = ''
   let error = ''
 
-  // Start the command and demux the stream
-  const stream = await exec.start()
+  // Start the command and demux the stream. When feeding stdin, hijack is
+  // required: without a socket upgrade the daemon never treats the request
+  // body as stdin, so the command hangs waiting for input that never arrives
+  // (dockerode v5). With hijack, start() resolves to a bidirectional socket
+  // whose .write()/end() deliver the input and close it.
+  const stream = await exec.start(input !== null ? { hijack: true, stdin: true } : {})
   return new Promise((resolve, reject) => {
     container.modem.demuxStream(
       stream,

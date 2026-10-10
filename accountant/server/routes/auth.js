@@ -113,8 +113,9 @@ authRouter.post('/bootstrap', async (req, res) => {
     // Best-effort: the account stays provisional (locked out) if delivery fails.
     await deliverVerificationEmail(user, verificationToken)
 
-    // Sync the new credentials into the SVN passwd file.
-    await bestEffortSvn(`bootstrap user '${username}'`, () => setUserPassword(username, password))
+    // Sync the new credentials into the SVN passwd file (same bcrypt hash as
+    // the database row written above).
+    await bestEffortSvn(`bootstrap user '${username}'`, () => setUserPassword(username, passwordHash))
 
     console.log(`Bootstrap complete: initial ADMIN account '${username}' created`)
     res.status(201).json({ message: 'Initial admin account created', user: sanitizeUser(user) })
@@ -200,9 +201,9 @@ authRouter.post('/reset-password', async (req, res) => {
 
     console.log(`Password reset for user '${result.user.username}' (${result.user.email})`)
 
-    // The new password must replace the old entry in the SVN passwd file (or
-    // be created, e.g. for a bulk-created account setting its first password).
-    await bestEffortSvn(`reset password for '${result.user.username}'`, () => setUserPassword(result.user.username, password))
+    // The new hash must replace the old entry in the SVN passwd file (or be
+    // created, e.g. for a bulk-created account setting its first password).
+    await bestEffortSvn(`reset password for '${result.user.username}'`, () => setUserPassword(result.user.username, passwordHash))
 
     res.json({ message: 'Password has been reset successfully' })
   } catch (err) {

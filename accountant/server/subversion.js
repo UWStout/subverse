@@ -1,5 +1,4 @@
 import 'dotenv/config'
-import { createHash } from 'crypto'
 import { execCommand } from './docker.js'
 import { getDatabase } from './db.js'
 
@@ -130,22 +129,12 @@ async function writeContainerFile (filePath, content) {
 // ---------------------------------------------------------------------------
 
 /**
- * Hash a plaintext password in the {SHA} format (the same one `htpasswd -d`
- * produces), which mod_authn_file in the gateway verifies natively. The
- * Accountant keeps bcrypt hashes in its own database; this one-way SHA value
- * is only ever derived from a plaintext password at the moment it is known
- * (create / update / reset).
+ * Shape of the bcrypt hashes stored in the database ($2a$/$2b$/$2y$, cost,
+ * salt + digest). The passwd file carries these values verbatim and
+ * mod_authn_file verifies them natively; the pattern guards against ever
+ * writing a plaintext or legacy-format value into the file.
  */
-export function sha1Hash (password) {
-  return `{SHA}${createHash('sha1').update(password).digest('base64')}`
-}
-
-/**
- * Build a full htpasswd-style line for the SVN passwd file.
- */
-export function passwdLine (username, password) {
-  return `${username}:${sha1Hash(password)}`
-}
+const BCRYPT_HASH_PATTERN = /^\$2[aby]\$\d{2}\$/
 
 /**
  * Insert or replace the entry for `username` in a passwd file's content.
@@ -417,7 +406,10 @@ async function rebuildAccessControlFile (projects = null, adminUsernames = null)
 }
 
 /**
- * Synchronizes the SVN access configuration with a project's current team.
+ * Synchronizes the SVN access configuration with a project's current team:
+ * rebuilds the authz file from the full database state and makes sure every
+ * member of THIS project has a passwd-file entry carrying their database
+ * bcrypt hash.
  *
  * @param {Object} projectInfo (should match the prisma project model w/ a populated assignments array)
  * @returns {Promise<void>}
@@ -439,9 +431,10 @@ export async function synchronizeRepositoryAccess (projectInfo) {
   await rebuildAccessControlFile(projects, adminUsers.map(u => u.username))
 
   // Make sure every member of THIS project can actually authenticate: each one
-  // needs a line in the passwd file. We cannot derive those from the bcrypt
-  // hashes stored here (one-way), so missing members are reported - they get
-  // their entry automatically when they set or reset their password.
+  // needs a line in the passwd file carrying the same bcrypt hash as their
+  // database row. Accounts that exist are (re)synced verbatim - which also
+  // migrates legacy-format entries left behind by earlier versions; members
+  // without a usable database account are only reported.
   const fresh = projects.find(p => p.slug === repoName) ?? projectInfo
 
   const members = new Set()
@@ -450,13 +443,32 @@ export async function synchronizeRepositoryAccess (projectInfo) {
   }
   if (fresh.offering?.teacher?.username) members.add(fresh.offering.teacher.username)
 
-  const passwdContent = await readContainerFile(PASSWD_FILE, { allowMissing: true })
-  const known = new Set(parsePasswdUsernames(passwdContent))
+  const accounts = members.size > 0
+    ? await db.user.findMany({
+      where: { username: { in: [...members] } },
+      select: { username: true, password_hash: true }
+    })
+    : []
+
   for (const username of members) {
-    if (!known.has(username)) {
-      console.warn(`[subversion] user '${username}' has no entry in ${PASSWD_FILE}; they will get one when they set or reset their password`)
+    if (!accounts.some(account => account.username === username)) {
+      console.warn(`[subversion] user '${username}' has no account in the database; they cannot authenticate until one exists`)
     }
   }
+
+  await withWriteLock(async () => {
+    const current = await readContainerFile(PASSWD_FILE, { allowMissing: true })
+    let next = current
+    for (const account of accounts) {
+      if (!BCRYPT_HASH_PATTERN.test(account.password_hash ?? '')) continue
+      next = upsertPasswdLine(next, account.username, account.password_hash)
+    }
+    // Skip the write when nothing changed - keeps repeated syncs cheap and
+    // avoids bumping the file's mtime for no reason.
+    if (next !== current) {
+      await writeContainerFile(PASSWD_FILE, next)
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -472,17 +484,21 @@ function assertValidUsername (username) {
 
 /**
  * Add or update a user's credentials in the container's passwd file so they
- * can authenticate against the SVN gateway. Called whenever the service knows
- * a plaintext password: account creation, password updates and resets.
+ * can authenticate against the SVN gateway. The account's bcrypt hash - the
+ * same value stored in the database - is written verbatim; mod_authn_file
+ * verifies bcrypt natively, so no hashing happens here. Called from every
+ * flow that stores a fresh hash (create / update / reset).
  */
-export async function setUserPassword (username, password) {
+export async function setUserPassword (username, passwordHash) {
   assertValidUsername(username)
-  if (!password || typeof password !== 'string') throw new Error('Missing password')
+  if (!passwordHash || typeof passwordHash !== 'string') throw new Error('Missing password hash')
+  if (!BCRYPT_HASH_PATTERN.test(passwordHash)) {
+    throw new Error('Password is not a bcrypt hash - refusing to write it to the SVN passwd file')
+  }
 
-  const hash = sha1Hash(password)
   await withWriteLock(async () => {
     const current = await readContainerFile(PASSWD_FILE, { allowMissing: true })
-    await writeContainerFile(PASSWD_FILE, upsertPasswdLine(current, username, hash))
+    await writeContainerFile(PASSWD_FILE, upsertPasswdLine(current, username, passwordHash))
   })
 }
 

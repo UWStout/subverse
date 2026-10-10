@@ -4,6 +4,8 @@ npm-debug.log
 
 # Build outputs and IDE configurations
 dist
+public
+data
 .env
 .git
 .gitignore

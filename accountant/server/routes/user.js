@@ -272,9 +272,10 @@ userRouter.post('/create', async (req, res) => {
     // Best-effort: the account stays provisional (locked out) if delivery fails.
     await deliverVerificationEmail(user, verificationToken)
 
-    // Sync the new credentials into the SVN passwd file so the account can
-    // authenticate against the gateway as soon as it exists.
-    await bestEffortSvn(`create user '${user.username}'`, () => setUserPassword(user.username, password))
+    // Sync the new credentials into the SVN passwd file (same bcrypt hash as
+    // the database row written above) so the account can authenticate against
+    // the gateway as soon as it exists.
+    await bestEffortSvn(`create user '${user.username}'`, () => setUserPassword(user.username, passwordHash))
 
     // Return the newly created user (with sensitive info removed)
     res.status(201).json({ user: sanitizeUser(user) })
@@ -539,10 +540,11 @@ userRouter.post('/update/:id', async (req, res) => {
       data: updateData
     })
 
-    // A password change must reach the SVN passwd file, otherwise the old
-    // credentials keep working on the gateway.
+    // A password change must reach the SVN passwd file (same bcrypt hash as
+    // the database row updated above), otherwise the old credentials keep
+    // working on the gateway.
     if (password) {
-      await bestEffortSvn(`update user '${updatedUser.username}'`, () => setUserPassword(updatedUser.username, password))
+      await bestEffortSvn(`update user '${updatedUser.username}'`, () => setUserPassword(updatedUser.username, updateData.password_hash))
     }
 
     res.json({ user: sanitizeUser(updatedUser) })

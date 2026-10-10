@@ -1,17 +1,17 @@
 #!/bin/bash
 
 # Check if the script is running with root/sudo privileges
-if [[ $EUID -ne 0 ]]; then
-  echo "This script must be run with sudo or as root!" >&2
-  exit 1
-fi
+# if [[ $EUID -ne 0 ]]; then
+#   echo "This script must be run with sudo or as root!" >&2
+#   exit 1
+# fi
 
 # Check for presence of the root data folder
-if [ ! -d "/volume1/subverse-data" ]; then
-  echo "The subverse root data folder could not be found."
-  echo "Please ensure '/volume1/subverse-data' exists and try again"
-  exit 1
-fi
+# if [ ! -d "/volume1/subverse-data" ]; then
+#   echo "The subverse root data folder could not be found."
+#   echo "Please ensure '/volume1/subverse-data' exists and try again"
+#   exit 1
+# fi
 
 # Check if the base traefik ports are in use
 if netstat -tulpn | grep -E -q "(:|\])443 "; then
@@ -60,13 +60,13 @@ docker build -t svn-base -f subversion/Dockerfile.svn-base subversion/
 
 # Make sure bind directories are created
 echo "Ensure empty bind dirs exist..."
-if [ ! -d "/volume1/subverse-data/svn-root" ]; then
-  mkdir "/volume1/subverse-data/svn-root"
-fi
+# if [ ! -d "/volume1/subverse-data/svn-root" ]; then
+#   mkdir "/volume1/subverse-data/svn-root"
+# fi
 
-if [ ! -d "/volume1/subverse-data/git-root" ]; then
-  mkdir "/volume1/subverse-data/git-root"
-fi
+# if [ ! -d "/volume1/subverse-data/git-root" ]; then
+#   mkdir "/volume1/subverse-data/git-root"
+# fi
 
 if [ ! -d "./traefik/logs" ]; then
   mkdir "./traefik/logs"
