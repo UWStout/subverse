@@ -431,12 +431,12 @@ describe('services/api', () => {
     it('posts the payload with snake_case fields', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ id: 1 }))
 
-      await createProject({ offeringId: 2, title: 'Final Project', slug: 'final-project', subversionUrl: null, gitUrl: 'https://git.example.com/x.git', description: 'Do it' })
+      await createProject({ offeringId: 2, title: 'Final Project', slug: 'final-project', type: 'GODOT', subversionUrl: null, gitUrl: 'https://git.example.com/x.git', description: 'Do it' })
 
       expect(fetch).toHaveBeenCalledWith('/project/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offering_id: 2, title: 'Final Project', slug: 'final-project', subversion_url: null, git_url: 'https://git.example.com/x.git', description: 'Do it' })
+        body: JSON.stringify({ offering_id: 2, title: 'Final Project', slug: 'final-project', type: 'GODOT', subversion_url: null, git_url: 'https://git.example.com/x.git', description: 'Do it' })
       })
     })
 

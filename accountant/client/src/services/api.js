@@ -272,7 +272,7 @@ export async function fetchProject (id) {
 }
 
 /** POST /project/create */
-export async function createProject ({ offeringId, title, slug, subversionUrl, gitUrl, description }) {
+export async function createProject ({ offeringId, title, slug, type, subversionUrl, gitUrl, description }) {
   const res = await fetch(`${BASE}/project/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -280,6 +280,7 @@ export async function createProject ({ offeringId, title, slug, subversionUrl, g
       offering_id: offeringId,
       title,
       slug,
+      ...(type !== undefined && { type }),
       subversion_url: subversionUrl ?? null,
       git_url: gitUrl ?? null,
       description: description ?? null
@@ -294,11 +295,12 @@ export async function createProject ({ offeringId, title, slug, subversionUrl, g
 }
 
 /** POST /project/update/:id - only fields that are defined are sent (partial update). */
-export async function updateProject (id, { offeringId, title, slug, subversionUrl, gitUrl, description }) {
+export async function updateProject (id, { offeringId, title, slug, type, subversionUrl, gitUrl, description }) {
   const payload = {}
   if (offeringId !== undefined) payload.offering_id = offeringId
   if (title !== undefined) payload.title = title
   if (slug !== undefined) payload.slug = slug
+  if (type !== undefined) payload.type = type
   if (subversionUrl !== undefined) payload.subversion_url = subversionUrl
   if (gitUrl !== undefined) payload.git_url = gitUrl
   if (description !== undefined) payload.description = description

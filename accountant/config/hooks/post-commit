@@ -1,0 +1,16 @@
+#!/bin/sh
+# post-commit - default hook installed by the Accountant service.
+#
+# Logs every commit to the container's stdout so it shows up in
+# `docker logs <container>`: revision, author and message.
+
+REPO="$1"
+COMMITTER="$2"
+
+NEWREV=$(svnlook latest "$REPO") || exit 0
+
+echo "[svn] r${NEWREV} by ${COMMITTER} in $(basename "$REPO")"
+svnlook log -r "${NEWREV}" "$REPO" | sed 's/^/    /'
+
+# A post-commit failure cannot undo the commit; never block on logging.
+exit 0

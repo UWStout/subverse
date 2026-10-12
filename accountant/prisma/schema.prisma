@@ -76,6 +76,7 @@ model Project {
   offering_id      Int      @map("offering_id")
   title            String
   slug             String   @unique
+  type             ProjectType @default(OTHER)
   subversion_url   String?  @map("subversion_url")
   git_url          String?  @map("git_url")
   description      String?
@@ -85,6 +86,13 @@ model Project {
 
   @@index([offering_id])
   @@map("projects")
+}
+
+enum ProjectType {
+  UNITY_ENGINE
+  UNREAL_ENGINE_5
+  GODOT
+  OTHER
 }
 
 model Assignment {

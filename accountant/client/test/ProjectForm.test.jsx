@@ -32,6 +32,7 @@ const PROJECT_1 = {
   offering_id: 1,
   title: 'Final Project',
   slug: 'final-project',
+  type: 'UNITY_ENGINE',
   subversion_url: null,
   git_url: 'https://github.com/example/final-project.git',
   description: 'Complete final assignment for the course'
@@ -138,11 +139,12 @@ describe('ProjectForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
-    // Empty optional fields are sent as null
+    // The type select defaults to OTHER; empty optional fields are sent as null
     expect(createProject).toHaveBeenCalledWith({
       offeringId: 1,
       title: 'Final Project',
       slug: 'final-project',
+      type: 'OTHER',
       subversionUrl: null,
       gitUrl: 'https://github.com/example/final-project.git',
       description: null
@@ -150,6 +152,28 @@ describe('ProjectForm', () => {
     // Success notifies the page and closes the dialog
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the selected project type on create', async () => {
+    renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    // The type dropdown offers all enum values plus an empty option
+    await user.click(screen.getByLabelText('Project type'))
+    for (const label of ['Unity', 'Unreal Engine 5', 'Godot', 'Other']) {
+      expect(await screen.findByRole('option', { name: label })).toBeInTheDocument()
+    }
+    await user.click(screen.getByRole('option', { name: 'Godot' }))
+
+    await selectOption('Offering', 'CS 101 – FALL25 101')
+    await user.type(screen.getByLabelText('Title'), 'Final Project')
+    await user.type(screen.getByLabelText('Slug'), 'final-project')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(createProject).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'GODOT' })
+    )
   })
 
   it('prefills the fields when editing an existing project', async () => {
@@ -161,8 +185,9 @@ describe('ProjectForm', () => {
     expect(screen.getByLabelText('Slug')).toHaveValue('final-project')
     expect(screen.getByLabelText('Git URL')).toHaveValue('https://github.com/example/final-project.git')
     expect(screen.getByLabelText('Description')).toHaveValue('Complete final assignment for the course')
-    // The select shows its chosen value once the options have loaded
+    // The selects show their chosen values once the options have loaded
     expect(await screen.findByText('CS 101 – FALL25 101')).toBeInTheDocument()
+    expect(screen.getByText('Unity')).toBeInTheDocument()
   })
 
   it('updates an existing project when saved', async () => {
@@ -178,6 +203,7 @@ describe('ProjectForm', () => {
       offeringId: 1,
       title: 'Renamed Project',
       slug: 'final-project',
+      type: 'UNITY_ENGINE',
       subversionUrl: null,
       gitUrl: 'https://github.com/example/final-project.git',
       description: 'Complete final assignment for the course'

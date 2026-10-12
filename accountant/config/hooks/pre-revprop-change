@@ -1,0 +1,17 @@
+#!/bin/sh
+# pre-revprop-change - default hook installed by the Accountant service.
+#
+# Denies all revision property changes. Course repositories do not need
+# revprops rewritten after the fact, and allowing it would let anyone with
+# write access alter commit metadata (log messages, authors, dates).
+#
+# Environment provided by Subversion:
+#   $1  path to the repository
+#   $2  username of the user making the change
+#   $3  revision whose property is being changed
+#   $4  name of the property
+#   $5  action (SET, CHANGE or DELETE)
+
+echo "Revision property changes are disabled on this server." >&2
+echo "Contact an administrator if you believe this is a mistake." >&2
+exit 1

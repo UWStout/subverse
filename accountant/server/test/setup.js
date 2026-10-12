@@ -151,6 +151,7 @@ const subversionPath = path.resolve(__dirname, '..', 'subversion.js')
 
 export const mockSubversion = {
   createRepository: vi.fn().mockResolvedValue(undefined),
+  installDefaultHooks: vi.fn().mockResolvedValue(undefined),
   synchronizeRepositoryAccess: vi.fn().mockResolvedValue(undefined),
   renameRepository: vi.fn().mockResolvedValue(undefined),
   deleteRepository: vi.fn().mockResolvedValue(undefined),

@@ -1,5 +1,5 @@
 services:
-  # Base SVN gateway with WEBDAV and svnserve services running
+  # Base SVN gateway with SVN WEBDAV service running
   svn_gateway:
     container_name: svn_gateway
     build:

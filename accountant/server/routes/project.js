@@ -70,6 +70,15 @@ function isValidSlug (slug) {
   return typeof slug === 'string' && SLUG_PATTERN.test(slug)
 }
 
+// Allowed values for Project.type - mirrors the ProjectType enum in
+// prisma/schema.prisma. Keep the two in sync when the enum changes.
+const PROJECT_TYPES = ['UNITY_ENGINE', 'UNREAL_ENGINE_5', 'GODOT', 'OTHER']
+const TYPE_ERROR = `Invalid type, expected one of: ${PROJECT_TYPES.join(', ')}`
+
+function isValidProjectType (type) {
+  return PROJECT_TYPES.includes(type)
+}
+
 // --- Routes (specific paths first, parameterized last) ---
 
 // Create Project post route
@@ -80,7 +89,7 @@ projectRouter.post('/create', async (req, res) => {
       return res.status(403).json({ error: 'Students cannot create projects' })
     }
 
-    const { offering_id, title, slug, subversion_url, git_url, description } = req.body
+    const { offering_id, title, slug, type, subversion_url, git_url, description } = req.body
 
     // Validate required fields
     if (!offering_id || !title || !slug) {
@@ -90,6 +99,11 @@ projectRouter.post('/create', async (req, res) => {
     // Validate slug format (must be URL / file path safe)
     if (!isValidSlug(slug)) {
       return res.status(400).json({ error: SLUG_ERROR })
+    }
+
+    // Validate the engine type (defaults to OTHER when omitted)
+    if (type !== undefined && !isValidProjectType(type)) {
+      return res.status(400).json({ error: TYPE_ERROR })
     }
 
     // Verify the offering exists
@@ -108,6 +122,7 @@ projectRouter.post('/create', async (req, res) => {
         offering_id: parseInt(offering_id, 10),
         title,
         slug,
+        ...(type !== undefined && { type }),
         subversion_url: subversion_url ?? null,
         git_url: git_url ?? null,
         description: description ?? null
@@ -143,16 +158,21 @@ projectRouter.post('/update/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid project ID' })
     }
 
-    const { offering_id, title, slug, subversion_url, git_url, description } = req.body
+    const { offering_id, title, slug, type, subversion_url, git_url, description } = req.body
 
     // Validate that at least one update field is provided
-    if (title === undefined && slug === undefined && subversion_url === undefined && git_url === undefined && description === undefined && offering_id === undefined) {
+    if (title === undefined && slug === undefined && type === undefined && subversion_url === undefined && git_url === undefined && description === undefined && offering_id === undefined) {
       return res.status(400).json({ error: 'No update fields provided' })
     }
 
     // Validate slug format if it is being changed (must be URL / file path safe)
     if (slug !== undefined && !isValidSlug(slug)) {
       return res.status(400).json({ error: SLUG_ERROR })
+    }
+
+    // Validate the engine type if it is being changed (must be a known value)
+    if (type !== undefined && !isValidProjectType(type)) {
+      return res.status(400).json({ error: TYPE_ERROR })
     }
 
     // Check project exists
@@ -186,6 +206,7 @@ projectRouter.post('/update/:id', async (req, res) => {
       data: {
         ...(title !== undefined && { title }),
         ...(slug !== undefined && { slug }),
+        ...(type !== undefined && { type }),
         ...(subversion_url !== undefined && { subversion_url: subversion_url ?? null }),
         ...(git_url !== undefined && { git_url: git_url ?? null }),
         ...(description !== undefined && { description }),

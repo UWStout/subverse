@@ -21,6 +21,14 @@ import { createProject, updateProject, fetchOfferings, fetchClasses } from '../s
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const SLUG_HINT = 'Lowercase letters and numbers separated by single hyphens (e.g. final-project)'
 
+/** Project engine types - mirrors the ProjectType enum in prisma/schema.prisma. */
+const PROJECT_TYPES = [
+  { value: 'UNITY_ENGINE', label: 'Unity' },
+  { value: 'UNREAL_ENGINE_5', label: 'Unreal Engine 5' },
+  { value: 'GODOT', label: 'Godot' },
+  { value: 'OTHER', label: 'Other' }
+]
+
 /**
  * Reusable project form wrapped in a Dialog (mirrors OfferingForm).
  * Offering options are loaded from the API when the dialog opens; class
@@ -40,6 +48,7 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
   const [offeringId, setOfferingId] = useState('')
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
+  const [type, setType] = useState('OTHER')
   const [subversionUrl, setSubversionUrl] = useState('')
   const [gitUrl, setGitUrl] = useState('')
   const [description, setDescription] = useState('')
@@ -65,12 +74,14 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
     if (project) {
       setTitle(project.title || '')
       setSlug(project.slug || '')
+      setType(project.type || 'OTHER')
       setSubversionUrl(project.subversion_url || '')
       setGitUrl(project.git_url || '')
       setDescription(project.description || '')
     } else {
       setTitle('')
       setSlug('')
+      setType('OTHER')
       setSubversionUrl('')
       setGitUrl('')
       setDescription('')
@@ -129,6 +140,7 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
       offeringId: Number(offeringId),
       title: title.trim(),
       slug: slug.trim(),
+      type,
       subversionUrl: subversionUrl.trim() || null,
       gitUrl: gitUrl.trim() || null,
       description: description.trim() || null
@@ -191,6 +203,23 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
                 {errors.offeringId}
               </Typography>
             )}
+          </FormControl>
+
+          <FormControl fullWidth>
+            <InputLabel id='project-type-label'>Project type</InputLabel>
+            <Select
+              labelId='project-type-label'
+              label='Project type'
+              value={type}
+              onChange={e => setType(e.target.value)}
+              disabled={loading || optionsLoading}
+            >
+              {PROJECT_TYPES.map(t => (
+                <MenuItem key={t.value} value={t.value}>
+                  {t.label}
+                </MenuItem>
+              ))}
+            </Select>
           </FormControl>
 
           <TextField

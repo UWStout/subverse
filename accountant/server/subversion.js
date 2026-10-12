@@ -1,6 +1,11 @@
 import 'dotenv/config'
+import { readdir, readFile } from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { execCommand } from './docker.js'
 import { getDatabase } from './db.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const SVN_CONTAINER_NAME = process.env.SVN_CONTAINER_NAME ?? 'svn_gateway_ur'
 
@@ -10,6 +15,19 @@ const SVN_CONTAINER_NAME = process.env.SVN_CONTAINER_NAME ?? 'svn_gateway_ur'
 const SVN_ROOT = '/var/svn'
 const PASSWD_FILE = '/etc/subversion/passwd'
 const AUTHZ_FILE = '/etc/subversion/subversion-access-control'
+
+// Default commit-hook templates live in a common folder on the client side
+// (this service), not inside the SVN container image. Every repository is
+// created with copies of these scripts in <repo>/hooks/, so hook behaviour
+// can be changed by editing one folder - no image rebuild required. Set
+// SVN_HOOKS_DIR to use custom templates; a missing or empty folder installs
+// nothing.
+const HOOKS_SOURCE_DIR = path.resolve(__dirname, '../config/hooks')
+
+// Valid SVN hook names: lowercase alphanumerics separated by single hyphens
+// (pre-commit, post-revprop-change, ...). Anything else in the template
+// folder is ignored - the name is embedded in container file paths.
+const HOOK_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 // Repository names come from project slugs (lowercase alphanumerics with
 // single hyphens). They are embedded in shell strings and file paths below,
@@ -267,6 +285,53 @@ function repoUrl (repoName) {
 }
 
 /**
+ * Install the default commit hooks into a freshly created repository by
+ * copying every script from the common template folder (config/hooks) into
+ * <repo>/hooks/ and marking it executable. Called immediately after
+ * `svnadmin create`; createRepository's final chown then hands the scripts
+ * to apache along with the rest of the repository, which is the user the
+ * hooks run as when commits arrive through WebDAV.
+ *
+ * Only regular files whose names look like SVN hook names are installed;
+ * anything else in the folder is skipped with a warning. A missing or empty
+ * template folder is not an error - the repository is created without hooks.
+ * Re-running on an existing repository (interrupted-run repair) refreshes
+ * its scripts to the current defaults.
+ *
+ * @param {string} repoName
+ */
+export async function installDefaultHooks (repoName) {
+  if (!repoName || !REPO_NAME_PATTERN.test(repoName)) {
+    throw new Error('Missing or invalid repository name')
+  }
+
+  const hooksDir = process.env.SVN_HOOKS_DIR ?? HOOKS_SOURCE_DIR
+  let entries
+  try {
+    entries = await readdir(hooksDir, { withFileTypes: true })
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.warn(`[subversion] hooks folder '${hooksDir}' not found - creating '${repoName}' without default hooks`)
+      return
+    }
+    throw err
+  }
+
+  for (const name of entries.filter(entry => entry.isFile()).map(entry => entry.name).sort()) {
+    if (!HOOK_NAME_PATTERN.test(name)) {
+      console.warn(`[subversion] ignoring '${name}' in ${hooksDir}: not a valid SVN hook name`)
+      continue
+    }
+    // Normalize line endings: the templates must reach the container as LF
+    // regardless of how they were checked out or edited (CRLF breaks sh).
+    const content = (await readFile(path.join(hooksDir, name), 'utf8')).replace(/\r\n/g, '\n')
+    const target = `${SVN_ROOT}/${repoName}/hooks/${name}`
+    await writeContainerFile(target, content)
+    await runInContainer(['chmod', '755', target])
+  }
+}
+
+/**
  * Creates a svn repo in the docker container
  *
  * @param {Object} projectInfo (should match the prisma project model)
@@ -288,12 +353,21 @@ export async function createRepository (projectInfo) {
     console.warn(`[subversion] repository '${repoName}' already exists - continuing to repair it`)
   }
 
+  // Install the default commit hooks (copied from the common template folder)
+  // while still running as root; the chown at the end of this function hands
+  // them to apache with everything else. On an interrupted-run repair this
+  // refreshes any stale scripts to the current defaults.
+  await installDefaultHooks(repoName)
+
   // Apply the standard monorepo structure: trunk / branches / tags folders
   // committed as the very first revision. A throwaway directory is imported so
-  // the whole layout lands in a single initial commit. Skipped when the repo
-  // already has content (interrupted-run repair).
-  const info = await execCommand(SVN_CONTAINER_NAME, ['svn', 'info', repoUrl(repoName)])
-  if (info.exitCode !== 0) {
+  // the whole layout lands in a single initial commit. Skipped when trunk
+  // already exists (interrupted-run repair). The probe targets <repo>/trunk
+  // rather than the repo URL itself: `svn info` on a fresh empty repository
+  // still exits 0, so only the /trunk probe can tell "fresh" from
+  // "already structured".
+  const trunkProbe = await execCommand(SVN_CONTAINER_NAME, ['svn', 'info', `${repoUrl(repoName)}/trunk`])
+  if (trunkProbe.exitCode !== 0) {
     const initDir = `/tmp/${repoName}-init`
     await runInContainer(['sh', '-c', [
       `rm -rf ${initDir}`,
@@ -314,8 +388,12 @@ export async function createRepository (projectInfo) {
 /**
  * Apply the default svn-props for a project type to a freshly created repo.
  *
- *   - svn:ignore on the repository root (set through the file:// URL, which
- *     writes straight into the repository without a commit step).
+ *   - svn:ignore on the repository root. `svn propset` only accepts working
+ *     copy targets (a bare repository URL is rejected with E200009), so the
+ *     value is set through a throwaway empty-depth checkout and committed as
+ *     its own revision. The current value is read first with `svn propget`,
+ *     which does accept URLs, so re-running on an existing repo (interrupted-
+ *     run repair) is a no-op instead of stacking another revision.
  *   - svn:needs-lock: Subversion has no repository-wide default for this
  *     property - it must be set on each individual file. The repo is still
  *     empty at creation time, so there is nothing to tag yet; the profile's
@@ -324,10 +402,31 @@ export async function createRepository (projectInfo) {
  */
 async function applyDefaultProperties (repoName, projectType) {
   const profile = PROP_PROFILES[projectType] ?? PROP_PROFILES.default
+  const desired = profile.ignore.join('\n')
 
-  await runInContainer([
-    'svn', 'propset', 'svn:ignore', profile.ignore.join('\n'), repoUrl(repoName)
-  ])
+  // propget accepts repository URLs; a non-zero exit simply means the
+  // property is not set yet. Trailing whitespace is normalized because
+  // propget's rendering of the stored value may or may not carry a final
+  // newline depending on how it was originally written.
+  const current = await execCommand(SVN_CONTAINER_NAME, ['svn', 'propget', 'svn:ignore', repoUrl(repoName)])
+  if (current.exitCode === 0 && current.output.replace(/\s+$/, '') === desired) {
+    return // already in place - nothing to commit
+  }
+
+  const wcDir = `/tmp/${repoName}-props`
+  const valueFile = `/tmp/${repoName}-ignore.txt`
+
+  // Feed the multi-line value through stdin so it never has to be quoted in
+  // a shell command line; propset then reads it with --file.
+  await writeContainerFile(valueFile, desired)
+
+  await runInContainer(['sh', '-c', [
+    `rm -rf ${wcDir}`,
+    `svn checkout --depth empty ${repoUrl(repoName)} ${wcDir} -q --non-interactive`,
+    `svn propset svn:ignore --file ${valueFile} ${wcDir}`,
+    `svn commit -m "Set default svn:ignore properties" ${wcDir} -q --non-interactive`,
+    `rm -rf ${wcDir} ${valueFile}`
+  ].join(' && ')])
 }
 
 /**
@@ -336,6 +435,11 @@ async function applyDefaultProperties (repoName, projectType) {
  * example after a teacher imports starter files - tag the binary/media
  * extensions listed in PROP_PROFILES.
  *
+ * `svn propset` only accepts working copy targets, so the requested nodes are
+ * fetched into a throwaway sparse checkout (only the touched paths are
+ * downloaded) and committed from there. Paths that do not exist or are not
+ * plain files are skipped with a warning.
+ *
  * @param {string} repoName
  * @param {string[]} relativePaths Paths relative to the repository root.
  */
@@ -343,11 +447,48 @@ export async function tagNeedsLock (repoName, relativePaths) {
   if (!repoName || !REPO_NAME_PATTERN.test(repoName)) {
     throw new Error('Missing or invalid repository name')
   }
-  for (const relativePath of relativePaths ?? []) {
-    const clean = String(relativePath).replace(/^\/+/, '')
-    if (!clean) continue
-    await runInContainer(['svn', 'propset', 'svn:needs-lock', 'true', `${repoUrl(repoName)}/${clean}`])
+
+  const paths = [...new Set((relativePaths ?? [])
+    .map(path => String(path).replace(/^\/+/, ''))
+    .filter(Boolean))]
+  if (paths.length === 0) return
+
+  // Probe each path through the URL: `svn cat` only succeeds for existing
+  // files, so this doubles as an existence + kind check.
+  const taggable = []
+  for (const path of paths) {
+    const probe = await execCommand(SVN_CONTAINER_NAME, ['svn', 'cat', `${repoUrl(repoName)}/${path}`])
+    if (probe.exitCode !== 0) {
+      console.warn(`[subversion] skipping svn:needs-lock for '${path}' in '${repoName}': not a file in the repository`)
+      continue
+    }
+    taggable.push(path)
   }
+  if (taggable.length === 0) return
+
+  const wcDir = `/tmp/${repoName}-needslock`
+
+  // A sparse checkout only knows about nodes it has fetched, so every target's
+  // ancestor directories must be brought in (depth empty) before the file
+  // itself can be updated. Collect each unique prefix across all paths;
+  // lexicographic order guarantees parents are fetched before children.
+  const prefixes = new Set()
+  for (const path of taggable) {
+    const segments = path.split('/')
+    for (let i = 1; i < segments.length; i++) {
+      prefixes.add(segments.slice(0, i).join('/'))
+    }
+  }
+
+  await runInContainer(['sh', '-c', [
+    `rm -rf ${wcDir}`,
+    `svn checkout --depth empty ${repoUrl(repoName)} ${wcDir} -q --non-interactive`,
+    ...[...prefixes].sort().map(prefix => `svn update --set-depth empty "${wcDir}/${prefix}" -q --non-interactive`),
+    ...taggable.map(path => `svn update "${wcDir}/${path}" -q --non-interactive`),
+    ...taggable.map(path => `svn propset svn:needs-lock true "${wcDir}/${path}"`),
+    `svn commit -m "Tag files with svn:needs-lock" ${wcDir} -q --non-interactive`,
+    `rm -rf ${wcDir}`
+  ].join(' && ')])
 }
 
 /**

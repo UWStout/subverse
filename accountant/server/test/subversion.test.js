@@ -1,4 +1,7 @@
 import { vi } from 'vitest'
+import os from 'os'
+import path from 'path'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { mockPrisma } from './setup.js'
 
 // ---------------------------------------------------------------------------
@@ -16,6 +19,16 @@ const CONTAINER = process.env.SVN_CONTAINER_NAME ?? 'svn_gateway_ur'
 
 const PASSWD_FILE = '/etc/subversion/passwd'
 const AUTHZ_FILE = '/etc/subversion/subversion-access-control'
+
+// Default hook templates the real module copies on repository creation.
+const HOOKS_DIR = path.resolve(__dirname, '../../config/hooks')
+const HOOK_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** Names of the default hooks that will actually be installed (sorted). */
+async function defaultHookNames () {
+  const entries = await readdir(HOOKS_DIR)
+  return entries.filter(name => HOOK_NAME_PATTERN.test(name)).sort()
+}
 
 /** All execCommand invocations made since the last reset. */
 let calls = []
@@ -187,60 +200,113 @@ describe('buildAccessControlFile', () => {
 // ---------------------------------------------------------------------------
 
 describe('createRepository', () => {
-  /** Make `svn info` report a fresh repo (no HEAD revision yet). */
+  /** Make the /trunk probe report a fresh repo (no structure committed yet). */
   function mockFreshRepo () {
     const base = execCommand.getMockImplementation()
     execCommand.mockImplementation(async (container, command, input) => {
-      if (command[0] === 'svn' && command[1] === 'info') {
+      if (command[0] === 'svn' && command[1] === 'info' && String(command[2]).endsWith('/trunk')) {
         calls.push({ container, command, input })
-        return { output: '', error: "svn: E200030: Can't open repository", exitCode: 1 }
+        return { output: '', error: "svn: E200013: Path 'file:///var/svn/my-proj/trunk' does not exist", exitCode: 1 }
       }
       return base(container, command, input)
     })
   }
 
-  it('creates the repo, initial structure, default props and ownership in order', async () => {
+  it('creates the repo, installs default hooks, initial structure, default props and ownership in order', async () => {
     mockContainerFiles()
     mockFreshRepo()
+    const hookNames = await defaultHookNames()
 
     await subversion.createRepository({ slug: 'my-proj' })
 
-    expect(calls.length).toBe(5)
+    // svnadmin create + (write, chmod) per default hook + trunk probe,
+    // import, propget, ignore value, props commit, chown
+    expect(calls.length).toBe(1 + hookNames.length * 2 + 6)
     expect(calls.every(c => c.container === CONTAINER)).toBe(true)
 
     // 1. bare repo
     expect(calls[0].command).toEqual(['svnadmin', 'create', '/var/svn/my-proj'])
 
-    // 2. freshness check (no HEAD yet -> import will run)
-    expect(calls[1].command).toEqual(['svn', 'info', 'file:///var/svn/my-proj'])
+    // 2. hooks: installed immediately after creation, each template written
+    //    via stdin (never shell-quoted) and marked executable right away,
+    //    in sorted name order
+    for (let i = 0; i < hookNames.length; i++) {
+      const name = hookNames[i]
+      const target = `/var/svn/my-proj/hooks/${name}`
+      expect(calls[1 + i * 2].command).toEqual(['sh', '-c', `cat > ${target}`])
+      expect(calls[1 + i * 2].input).toBe(await readFile(path.join(HOOKS_DIR, name), 'utf8'))
+      expect(calls[2 + i * 2].command).toEqual(['chmod', '755', target])
+    }
 
-    // 3. monorepo structure as first commit (trunk / branches / tags)
-    const initScript = calls[2].command[2]
-    expect(calls[2].command[0]).toBe('sh')
+    const rest = calls.slice(1 + hookNames.length * 2)
+
+    // 3. freshness check: probe <repo>/trunk (a bare-repo `svn info` exits 0
+    //    even when the repo is empty, so only the /trunk probe can tell a
+    //    fresh repo from one that already has structure)
+    expect(rest[0].command).toEqual(['svn', 'info', 'file:///var/svn/my-proj/trunk'])
+
+    // 4. monorepo structure as first commit (trunk / branches / tags)
+    const initScript = rest[1].command[2]
+    expect(rest[1].command[0]).toBe('sh')
     expect(initScript).toContain('mkdir -p /tmp/my-proj-init/trunk /tmp/my-proj-init/branches /tmp/my-proj-init/tags')
     expect(initScript).toContain('svn import /tmp/my-proj-init file:///var/svn/my-proj')
 
-    // 4. default properties (svn:ignore on the repo root)
-    const [cmd, , prop, value, url] = calls[3].command
-    expect(cmd).toBe('svn')
-    expect(prop).toBe('svn:ignore')
-    expect(url).toBe('file:///var/svn/my-proj')
-    expect(value.split('\n')).toContain('.git')
-    expect(value.split('\n')).toContain('Thumbs.db')
+    // 5. read the current svn:ignore through the URL (propget accepts URLs,
+    //    unlike propset) to decide whether a commit is needed at all
+    expect(rest[2].command).toEqual(['svn', 'propget', 'svn:ignore', 'file:///var/svn/my-proj'])
 
-    // 5. hand ownership back to apache
-    expect(calls[4].command).toEqual(['chown', '-R', 'apache:apache', '/var/svn/my-proj'])
+    // 6. the desired multi-line value is fed to a file via stdin so it never
+    //    has to be shell-quoted
+    const ignoreValue = writtenTo('/tmp/my-proj-ignore.txt')
+    expect(ignoreValue.split('\n')).toContain('.git')
+    expect(ignoreValue.split('\n')).toContain('Thumbs.db')
+
+    // 7. property is set through a throwaway empty-depth working copy and
+    //    committed (propset refuses bare repository URLs with E200009)
+    const propsScript = rest[4].command[2]
+    expect(rest[4].command[0]).toBe('sh')
+    expect(propsScript).toContain('svn checkout --depth empty file:///var/svn/my-proj /tmp/my-proj-props')
+    expect(propsScript).toContain('svn propset svn:ignore --file /tmp/my-proj-ignore.txt /tmp/my-proj-props')
+    expect(propsScript).toContain('svn commit')
+
+    // 8. hand ownership back to apache (covers the hook scripts too)
+    expect(rest[5].command).toEqual(['chown', '-R', 'apache:apache', '/var/svn/my-proj'])
   })
 
   it('skips the initial import when the repo already has content (repair)', async () => {
-    mockContainerFiles() // svn info succeeds -> repo has a HEAD revision
+    mockContainerFiles() // /trunk probe succeeds -> structure already exists
 
     await subversion.createRepository({ slug: 'my-proj' })
 
     const scripts = calls.filter(c => c.command[0] === 'sh').map(c => c.command[2])
     expect(scripts.some(s => s.includes('svn import'))).toBe(false)
     // ...but props and ownership are still (re)applied
-    expect(calls.some(c => c.command[1] === 'propset')).toBe(true)
+    expect(scripts.some(s => s.includes('svn propset svn:ignore'))).toBe(true)
+    expect(calls[calls.length - 1].command).toEqual(['chown', '-R', 'apache:apache', '/var/svn/my-proj'])
+  })
+
+  it('skips the property commit when svn:ignore already matches the profile', async () => {
+    // First run: capture the exact value the module writes for this profile.
+    mockContainerFiles()
+    await subversion.createRepository({ slug: 'my-proj' })
+    const desired = writtenTo('/tmp/my-proj-ignore.txt')
+
+    // Second run (repair): propget reports that same value -> nothing to do.
+    mockContainerFiles()
+    const base = execCommand.getMockImplementation()
+    execCommand.mockImplementation(async (container, command, input) => {
+      if (command[0] === 'svn' && command[1] === 'propget') {
+        calls.push({ container, command, input })
+        return { output: desired, error: '', exitCode: 0 }
+      }
+      return base(container, command, input)
+    })
+
+    await subversion.createRepository({ slug: 'my-proj' })
+
+    const scripts = calls.filter(c => c.command[0] === 'sh').map(c => c.command[2])
+    expect(scripts.some(s => s.includes('svn propset svn:ignore'))).toBe(false)
+    expect(scripts.some(s => s.includes('svn import'))).toBe(false)
     expect(calls[calls.length - 1].command).toEqual(['chown', '-R', 'apache:apache', '/var/svn/my-proj'])
   })
 
@@ -251,8 +317,8 @@ describe('createRepository', () => {
       if (command[0] === 'svnadmin') {
         return { output: '', error: 'svnadmin: E000031: Repository already exists', exitCode: 1 }
       }
-      if (command[0] === 'svn' && command[1] === 'info') {
-        return { output: '', error: "svn: E200030: Can't open repository", exitCode: 1 }
+      if (command[0] === 'svn' && command[1] === 'info' && String(command[2]).endsWith('/trunk')) {
+        return { output: '', error: 'svn: E200013: Path does not exist', exitCode: 1 }
       }
       return base(container, command, input)
     })
@@ -260,6 +326,8 @@ describe('createRepository', () => {
     await expect(subversion.createRepository({ slug: 'my-proj' })).resolves.toBeUndefined()
     // The import ran despite the pre-existing directory
     expect(calls.some(c => c.command[2]?.includes('svn import'))).toBe(true)
+    // ...and the default hooks are (re)installed while repairing
+    expect(calls.some(c => c.command[2]?.includes('> /var/svn/my-proj/hooks/'))).toBe(true)
   })
 
   it('rejects a missing or malformed slug', async () => {
@@ -276,6 +344,82 @@ describe('createRepository', () => {
     }))
 
     await expect(subversion.createRepository({ slug: 'my-proj' })).rejects.toThrow(/svnadmin/)
+  })
+})
+
+describe('installDefaultHooks', () => {
+  afterEach(() => {
+    delete process.env.SVN_HOOKS_DIR
+  })
+
+  it('copies every default hook into <repo>/hooks and marks it executable', async () => {
+    mockContainerFiles()
+    const hookNames = await defaultHookNames()
+    expect(hookNames.length).toBeGreaterThan(0)
+
+    await subversion.installDefaultHooks('my-proj')
+
+    for (const name of hookNames) {
+      const target = `/var/svn/my-proj/hooks/${name}`
+      expect(writtenTo(target)).toBe(await readFile(path.join(HOOKS_DIR, name), 'utf8'))
+      expect(calls.some(c => c.command.join(' ') === `chmod 755 ${target}`)).toBe(true)
+    }
+  })
+
+  it('normalizes CRLF line endings before writing', async () => {
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'svn-hooks-'))
+    try {
+      await writeFile(path.join(tmpDir, 'pre-commit'), '#!/bin/sh\r\nexit 0\r\n')
+      process.env.SVN_HOOKS_DIR = tmpDir
+
+      mockContainerFiles()
+      await subversion.installDefaultHooks('my-proj')
+
+      expect(writtenTo('/var/svn/my-proj/hooks/pre-commit')).toBe('#!/bin/sh\nexit 0\n')
+    } finally {
+      delete process.env.SVN_HOOKS_DIR
+      await rm(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('installs from SVN_HOOKS_DIR when set and skips non-hook files', async () => {
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'svn-hooks-'))
+    try {
+      await writeFile(path.join(tmpDir, 'pre-commit'), '#!/bin/sh\nexit 0\n')
+      await writeFile(path.join(tmpDir, 'README.md'), 'not a hook\n')
+      process.env.SVN_HOOKS_DIR = tmpDir
+
+      mockContainerFiles()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      await subversion.installDefaultHooks('my-proj')
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('README.md'))
+      expect(writtenTo('/var/svn/my-proj/hooks/pre-commit')).toBe('#!/bin/sh\nexit 0\n')
+      // only the single valid hook: write + chmod
+      expect(calls.length).toBe(2)
+      warn.mockRestore()
+    } finally {
+      delete process.env.SVN_HOOKS_DIR
+      await rm(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('warns and installs nothing when the template folder is missing', async () => {
+    process.env.SVN_HOOKS_DIR = '/nonexistent/hooks-folder'
+
+    mockContainerFiles()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await subversion.installDefaultHooks('my-proj')
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('/nonexistent/hooks-folder'))
+    expect(calls.length).toBe(0)
+    warn.mockRestore()
+  })
+
+  it('rejects a malformed repository name', async () => {
+    mockContainerFiles()
+    await expect(subversion.installDefaultHooks('Bad/Name')).rejects.toThrow(/repository name/)
+    expect(calls.length).toBe(0)
   })
 })
 
@@ -300,6 +444,68 @@ describe('renameRepository / deleteRepository', () => {
     const rm = calls.find(c => c.command[0] === 'sh' && c.command[2]?.includes('rm -rf /var/svn/old-name'))
     expect(rm).toBeDefined()
     expect(writtenTo(AUTHZ_FILE)).toBeDefined()
+  })
+})
+
+describe('tagNeedsLock', () => {
+  it('tags existing files through a sparse working copy and skips non-files', async () => {
+    mockContainerFiles()
+    const base = execCommand.getMockImplementation()
+    execCommand.mockImplementation(async (container, command, input) => {
+      if (command[0] === 'svn' && command[1] === 'cat') {
+        calls.push({ container, command, input })
+        // The two pngs exist; 'assets' is a directory and 'gone.png' is
+        // missing - both must be skipped.
+        const exists = command[2] === 'file:///var/svn/my-proj/trunk/hero.png' ||
+          command[2] === 'file:///var/svn/my-proj/trunk/sub/deep/f.png'
+        return exists
+          ? { output: 'binary', error: '', exitCode: 0 }
+          : { output: '', error: 'svn: E200013: path not found / not a file', exitCode: 5 }
+      }
+      return base(container, command, input)
+    })
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await subversion.tagNeedsLock('my-proj', ['/trunk/hero.png', 'trunk/sub/deep/f.png', 'assets', 'gone.png'])
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'assets'"))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'gone.png'"))
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("'trunk/hero.png'"))
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("'trunk/sub/deep/f.png'"))
+    warn.mockRestore()
+
+    const scripts = calls.filter(c => c.command[0] === 'sh').map(c => c.command[2])
+    expect(scripts).toHaveLength(1)
+    const script = scripts[0]
+    expect(script).toContain('svn checkout --depth empty file:///var/svn/my-proj /tmp/my-proj-needslock')
+    // ancestor directories are fetched (parents before children) so the
+    // sparse working copy can resolve the deep file paths
+    expect(script).toContain('svn update --set-depth empty "/tmp/my-proj-needslock/trunk" -q')
+    expect(script).toContain('svn update --set-depth empty "/tmp/my-proj-needslock/trunk/sub" -q')
+    expect(script).toContain('svn update --set-depth empty "/tmp/my-proj-needslock/trunk/sub/deep" -q')
+    const trunkAt = script.indexOf('/tmp/my-proj-needslock/trunk"')
+    const subAt = script.indexOf('/tmp/my-proj-needslock/trunk/sub"')
+    expect(trunkAt).toBeLessThan(subAt)
+    // then the files themselves, tagged in a single commit
+    expect(script).toContain('svn update "/tmp/my-proj-needslock/trunk/hero.png" -q')
+    expect(script).toContain('svn update "/tmp/my-proj-needslock/trunk/sub/deep/f.png" -q')
+    expect(script).toContain('svn propset svn:needs-lock true "/tmp/my-proj-needslock/trunk/hero.png"')
+    expect(script).toContain('svn propset svn:needs-lock true "/tmp/my-proj-needslock/trunk/sub/deep/f.png"')
+    expect(script).not.toContain('assets')
+    expect(script).not.toContain('gone.png')
+    expect(script).toContain('svn commit')
+  })
+
+  it('does nothing when no paths are given', async () => {
+    mockContainerFiles()
+    await subversion.tagNeedsLock('my-proj', [])
+    expect(calls.length).toBe(0)
+  })
+
+  it('rejects a malformed repository name', async () => {
+    mockContainerFiles()
+    await expect(subversion.tagNeedsLock('Bad/Name', ['x.png'])).rejects.toThrow(/repository name/)
+    expect(calls.length).toBe(0)
   })
 })
 

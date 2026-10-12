@@ -1,0 +1,43 @@
+#!/bin/sh
+# pre-commit - default hook installed by the Accountant service.
+#
+# Rejects commits that add or modify a single file larger than the configured
+# limit, keeping oversized binaries out of course repositories.
+#
+#   SVN_MAX_FILE_SIZE_MB  size limit in megabytes (default: 500)
+#
+# Environment provided by Subversion:
+#   $1  path to the repository
+#   $2  username of the committer
+#   TXN transaction of the commit being validated
+
+REPO="$1"
+MAX_MB="${SVN_MAX_FILE_SIZE_MB:-500}"
+MAX_BYTES=$(( MAX_MB * 1024 * 1024 ))
+
+changed=$(svnlook changed -t "$TXN" "$REPO") || exit 1
+
+# Lines look like "A /trunk/path", "M /trunk/path (props)", "D /trunk/path".
+while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    action=${line%% *}
+    path=${line#* }
+
+    # Deletions carry no content to size-check.
+    [ "$action" = "D" ] && continue
+
+    # `svnlook cat` fails for non-files (directories, props-only changes);
+    # the empty output then measures 0 bytes and the entry is skipped.
+    size=$(svnlook cat -t "$TXN" "$REPO" "$path" 2>/dev/null | wc -c)
+
+    if [ "$size" -gt "$MAX_BYTES" ]; then
+        echo "Commit rejected by pre-commit hook:" >&2
+        echo "  $path is $(( size / 1024 / 1024 )) MB; the limit is ${MAX_MB} MB." >&2
+        echo "  Ask an instructor before committing files that large." >&2
+        exit 1
+    fi
+done <<EOF
+$changed
+EOF
+
+exit 0

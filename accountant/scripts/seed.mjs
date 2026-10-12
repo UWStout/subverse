@@ -11,7 +11,8 @@
  *   - 4 classes: GDD 200 Intro to Game Development, GDD 325 Exploratory Game
  *     Design, CS 450 Game Design Capstone, CS 458 Software Engineering Practicum
  *   - 8 offerings (two per class), each taught by a different teacher
- *   - 24 projects (three per offering) with SVN/Git URLs and descriptions
+ *   - 24 projects (three per offering) with SVN/Git URLs, a random game
+ *     engine type and descriptions
  *   - Student-to-project assignments: every project gets 1-3 students so that
  *     student accounts can actually see data (students may only view projects
  *     they are assigned to). Some students end up unassigned on purpose, to
@@ -98,6 +99,9 @@ const PROJECT_TITLES = [
   ['Build Pipeline Studio', 'Code Review Trainer', 'Test Automation Lab', 'Release Manager Sim', 'DevOps Dashboard', 'CI Sandbox']
 ]
 
+/** Game engine types - mirrors the ProjectType enum in prisma/schema.prisma. */
+const PROJECT_TYPES = ['UNITY_ENGINE', 'UNREAL_ENGINE_5', 'GODOT', 'OTHER']
+
 // --- Generate the dataset (in memory, before touching the database) -----------
 /** 39 unique first/last name pairs for teachers + students. */
 const namePairs = shuffle(FIRST_NAMES.flatMap(first => LAST_NAMES.map(last => [first, last])))
@@ -144,7 +148,7 @@ CLASSES.forEach((cls, ci) => {
 const shuffledTeachers = shuffle(teachers)
 
 /** Three projects per offering; titles are unique within each class. */
-const projects = [] // { offeringIndex, title, slug, subversion_url, git_url, description }
+const projects = [] // { offeringIndex, title, slug, type, subversion_url, git_url, description }
 const usedSlugs = new Set()
 offerings.forEach((offering, oi) => {
   const cls = CLASSES[offering.classIndex]
@@ -157,6 +161,7 @@ offerings.forEach((offering, oi) => {
       offeringIndex: oi,
       title,
       slug,
+      type: PROJECT_TYPES[Math.floor(rand() * PROJECT_TYPES.length)],
       subversion_url: `https://svn.university.edu/courses/${cls.subject}${cls.number}/${offering.term.toLowerCase()}/${offering.section}/${slug}`,
       git_url: rand() < 0.5 ? `https://git.university.edu/courses/${cls.subject}${cls.number}/${slug}.git` : null,
       description: `${title}: team project for ${cls.subject} ${cls.number} (${offering.term}, section ${offering.section}).`
@@ -278,6 +283,7 @@ try {
           offering_id: offeringRows[project.offeringIndex].id,
           title: project.title,
           slug: project.slug,
+          type: project.type,
           subversion_url: project.subversion_url,
           git_url: project.git_url,
           description: project.description
