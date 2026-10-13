@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { mockPrisma } from './setup.js'
+import { PROP_PROFILE } from '../property-sets.js'
 
 // ---------------------------------------------------------------------------
 // Load the REAL subversion module (setup.js mocks it for route tests) with a
@@ -220,7 +221,7 @@ describe('createRepository', () => {
     await subversion.createRepository({ slug: 'my-proj' })
 
     // svnadmin create + (write, chmod) per default hook + trunk probe,
-    // import, propget, ignore value, props commit, chown
+    // import, one value file per profile property, props script, chown
     expect(calls.length).toBe(1 + hookNames.length * 2 + 6)
     expect(calls.every(c => c.container === CONTAINER)).toBe(true)
 
@@ -251,22 +252,23 @@ describe('createRepository', () => {
     expect(initScript).toContain('mkdir -p /tmp/my-proj-init/trunk /tmp/my-proj-init/branches /tmp/my-proj-init/tags')
     expect(initScript).toContain('svn import /tmp/my-proj-init file:///var/svn/my-proj')
 
-    // 5. read the current svn:ignore through the URL (propget accepts URLs,
-    //    unlike propset) to decide whether a commit is needed at all
-    expect(rest[2].command).toEqual(['svn', 'propget', 'svn:ignore', 'file:///var/svn/my-proj'])
+    // 5. each profile property's multi-line value is fed to a file via stdin
+    //    so it never has to be shell-quoted - one file per property, in
+    //    profile order (svn:global-ignores, then svn:auto-props). A plain
+    //    'default' type applies the base profile unchanged.
+    expect(rest[2].command).toEqual(['sh', '-c', 'cat > /tmp/my-proj-value-1.txt'])
+    expect(writtenTo('/tmp/my-proj-value-1.txt')).toBe(PROP_PROFILE.base['svn:global-ignores'].join('\n'))
+    expect(rest[3].command).toEqual(['sh', '-c', 'cat > /tmp/my-proj-value-2.txt'])
+    expect(writtenTo('/tmp/my-proj-value-2.txt')).toBe(PROP_PROFILE.base['svn:auto-props'].join('\n'))
 
-    // 6. the desired multi-line value is fed to a file via stdin so it never
-    //    has to be shell-quoted
-    const ignoreValue = writtenTo('/tmp/my-proj-ignore.txt')
-    expect(ignoreValue.split('\n')).toContain('.git')
-    expect(ignoreValue.split('\n')).toContain('Thumbs.db')
-
-    // 7. property is set through a throwaway empty-depth working copy and
-    //    committed (propset refuses bare repository URLs with E200009)
+    // 6. a throwaway working copy is checked out, both properties are set
+    //    from the value files on trunk (propset refuses bare repository URLs
+    //    with E200009) and committed
     const propsScript = rest[4].command[2]
     expect(rest[4].command[0]).toBe('sh')
-    expect(propsScript).toContain('svn checkout --depth empty file:///var/svn/my-proj /tmp/my-proj-props')
-    expect(propsScript).toContain('svn propset svn:ignore --file /tmp/my-proj-ignore.txt /tmp/my-proj-props')
+    expect(propsScript).toContain('svn checkout file:///var/svn/my-proj /tmp/my-proj-props -q --non-interactive')
+    expect(propsScript).toContain('svn propset svn:global-ignores --file /tmp/my-proj-value-1.txt /tmp/my-proj-props/trunk')
+    expect(propsScript).toContain('svn propset svn:auto-props --file /tmp/my-proj-value-2.txt /tmp/my-proj-props/trunk')
     expect(propsScript).toContain('svn commit')
 
     // 8. hand ownership back to apache (covers the hook scripts too)
@@ -281,33 +283,57 @@ describe('createRepository', () => {
     const scripts = calls.filter(c => c.command[0] === 'sh').map(c => c.command[2])
     expect(scripts.some(s => s.includes('svn import'))).toBe(false)
     // ...but props and ownership are still (re)applied
-    expect(scripts.some(s => s.includes('svn propset svn:ignore'))).toBe(true)
+    expect(scripts.some(s => s.includes('svn checkout file:///var/svn/my-proj /tmp/my-proj-props'))).toBe(true)
+    expect(scripts.some(s => s.includes('svn propset svn:global-ignores --file'))).toBe(true)
     expect(calls[calls.length - 1].command).toEqual(['chown', '-R', 'apache:apache', '/var/svn/my-proj'])
   })
 
-  it('skips the property commit when svn:ignore already matches the profile', async () => {
-    // First run: capture the exact value the module writes for this profile.
+  it('re-applies default properties on repeated runs (no skip-if-matches)', async () => {
+    // First run on an already-structured repo (probe succeeds -> import skipped)
     mockContainerFiles()
     await subversion.createRepository({ slug: 'my-proj' })
-    const desired = writtenTo('/tmp/my-proj-ignore.txt')
 
-    // Second run (repair): propget reports that same value -> nothing to do.
+    // Second consecutive run: the property script is rebuilt and re-committed
+    // unconditionally - there is no read-back/skip optimization
     mockContainerFiles()
-    const base = execCommand.getMockImplementation()
-    execCommand.mockImplementation(async (container, command, input) => {
-      if (command[0] === 'svn' && command[1] === 'propget') {
-        calls.push({ container, command, input })
-        return { output: desired, error: '', exitCode: 0 }
-      }
-      return base(container, command, input)
-    })
-
     await subversion.createRepository({ slug: 'my-proj' })
 
     const scripts = calls.filter(c => c.command[0] === 'sh').map(c => c.command[2])
-    expect(scripts.some(s => s.includes('svn propset svn:ignore'))).toBe(false)
+    expect(scripts.some(s => s.includes('svn propset svn:global-ignores --file'))).toBe(true)
+    expect(scripts.some(s => s.includes('svn commit'))).toBe(true)
     expect(scripts.some(s => s.includes('svn import'))).toBe(false)
-    expect(calls[calls.length - 1].command).toEqual(['chown', '-R', 'apache:apache', '/var/svn/my-proj'])
+  })
+
+  it('keeps type-specific profiles isolated between creations (no shared-state mutation)', async () => {
+    // Snapshot the pristine base profile before any creation runs - expected
+    // values must be computed from this, not from PROP_PROFILE.base at assert
+    // time (a mutating merge would poison both sides of a naive comparison).
+    const pristineBaseIgnores = [...PROP_PROFILE.base['svn:global-ignores']]
+
+    // First project: Godot. Its svn:global-ignores is base + GODOT.
+    mockContainerFiles()
+    await subversion.createRepository({ slug: 'godot-proj', type: 'GODOT' })
+    const firstGodotIgnores = writtenTo('/tmp/godot-proj-value-1.txt')
+    expect(firstGodotIgnores.split('\n')).toEqual([
+      ...pristineBaseIgnores,
+      ...PROP_PROFILE.GODOT['svn:global-ignores']
+    ])
+
+    // Second project of the SAME type: identical value. A merge that mutates
+    // the shared base would append the Godot entries a second time.
+    mockContainerFiles()
+    await subversion.createRepository({ slug: 'godot-proj-2', type: 'GODOT' })
+    expect(writtenTo('/tmp/godot-proj-2-value-1.txt')).toBe(firstGodotIgnores)
+
+    // Third project of a DIFFERENT type: must not inherit Godot entries.
+    mockContainerFiles()
+    await subversion.createRepository({ slug: 'unity-proj', type: 'UNITY_ENGINE' })
+    const unityIgnores = writtenTo('/tmp/unity-proj-value-1.txt').split('\n')
+    expect(unityIgnores).toEqual([
+      ...pristineBaseIgnores,
+      ...PROP_PROFILE.UNITY_ENGINE['svn:global-ignores']
+    ])
+    expect(unityIgnores).not.toContain('.godot/')
   })
 
   it('continues past an existing repo directory (interrupted-run repair)', async () => {

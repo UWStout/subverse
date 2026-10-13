@@ -366,12 +366,15 @@ describe('Project API Routes', () => {
       expect(res.status).toBe(400)
     })
 
-    it('returns 400 when slug contains uppercase letters', async () => {
+    it('accepts slugs containing uppercase letters', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+      mockPrisma.project.create.mockResolvedValue({ ...TEST_PROJECT, title: 'New Project' })
+
       const res = await request(app)
         .post('/project/create')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
         .send({ offering_id: 1, title: 'New Project', slug: 'New-Project' })
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(201)
     })
 
     it('returns 400 when slug has leading or trailing hyphens', async () => {

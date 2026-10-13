@@ -18,8 +18,8 @@ import {
 import { createProject, updateProject, fetchOfferings, fetchClasses } from '../services/api'
 
 /** Slug format enforced by the server (URL / file path safe). */
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-const SLUG_HINT = 'Lowercase letters and numbers separated by single hyphens (e.g. final-project)'
+const SLUG_PATTERN = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/
+const SLUG_HINT = 'Letters and numbers separated by single hyphens (e.g. final-project)'
 
 /** Project engine types - mirrors the ProjectType enum in prisma/schema.prisma. */
 const PROJECT_TYPES = [

@@ -441,7 +441,7 @@ describe('services/api', () => {
     })
 
     it('throws the server-provided error message on failure', async () => {
-      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Invalid slug format, expected lowercase letters and numbers separated by single hyphens (e.g. final-project)' }, false))
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Invalid slug format, expected letters and numbers separated by single hyphens (e.g. final-project)' }, false))
 
       await expect(createProject({ offeringId: 1, title: 'x', slug: 'Bad Slug' })).rejects.toThrow(/invalid slug/i)
     })

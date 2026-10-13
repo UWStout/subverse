@@ -58,13 +58,13 @@ function parseClassCode (code) {
 }
 
 /**
- * Proper slug format: lowercase latin letters and digits only, with single
- * hyphens between segments (e.g. "final-project").
- * Rejects spaces, uppercase, non-latin characters, and any special character
- * that is unsafe in URLs or file paths.
+ * Proper slug format: latin letters (upper- or lower-case) and digits only,
+ * with single hyphens between segments (e.g. "final-project").
+ * Rejects spaces, non-latin characters, and any special character that is
+ * unsafe in URLs or file paths.
  */
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-const SLUG_ERROR = 'Invalid slug format, expected lowercase letters and numbers separated by single hyphens (e.g. final-project)'
+const SLUG_PATTERN = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/
+const SLUG_ERROR = 'Invalid slug format, expected letters and numbers separated by single hyphens (e.g. final-project)'
 
 function isValidSlug (slug) {
   return typeof slug === 'string' && SLUG_PATTERN.test(slug)

@@ -31,10 +31,10 @@ const HOOKS_SOURCE_DIR = path.resolve(__dirname, '../config/hooks')
 // folder is ignored - the name is embedded in container file paths.
 const HOOK_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-// Repository names come from project slugs (lowercase alphanumerics with
-// single hyphens). They are embedded in shell strings and file paths below,
-// so anything outside this shape is rejected outright.
-const REPO_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+// Repository names come from project slugs (alphanumerics with single
+// hyphens). They are embedded in shell strings and file paths below, so
+// anything outside this shape is rejected outright.
+const REPO_NAME_PATTERN = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/
 
 // Usernames that are safe to place inside an SVN authz group list (no commas,
 // spaces or other characters that would break the file's syntax).
@@ -351,8 +351,11 @@ export async function createRepository (projectInfo) {
  *   - svn:auto-props to signal which files need locks.
  */
 async function applyDefaultProperties (repoName, projectType) {
-  // Build combined profile (base plus project type)
-  const profile = PROP_PROFILE.base ?? { 'svn:global-ignores': [], 'svn:auto-props': [] }
+  // Build combined profile (base plus project type) - shallow copy so the
+  // merge below never mutates the shared module-level PROP_PROFILE.base
+  // (the server process is long-lived, so a mutation would leak entries into
+  // every later project).
+  const profile = { ...(PROP_PROFILE.base ?? { 'svn:global-ignores': [], 'svn:auto-props': [] }) }
   if (Object.hasOwn(PROP_PROFILE, projectType)) {
     profile['svn:global-ignores'] = [
       ...profile['svn:global-ignores'],
@@ -371,7 +374,7 @@ async function applyDefaultProperties (repoName, projectType) {
   // List of commands to set the properties
   const commands = [
     `rm -rf ${wcDir}`,
-    `svn checkout --depth empty ${repoUrl(repoName)} ${wcDir} -q --non-interactive`
+    `svn checkout ${repoUrl(repoName)} ${wcDir} -q --non-interactive`
   ]
 
   // Save each value to a file and build the propset command
@@ -386,7 +389,7 @@ async function applyDefaultProperties (repoName, projectType) {
   }
 
   // Commit and cleanup
-  commands.push(`svn commit -m "Set default properties trunk for project type" ${wcDir} -q --non-interactive`)
+  commands.push(`svn commit -m "Set default properties on trunk for project type '${projectType}'" ${wcDir} -q --non-interactive`)
   commands.push(`rm -rf ${wcDir} ${files.join(' ')}`)
 
   // Run the commands
