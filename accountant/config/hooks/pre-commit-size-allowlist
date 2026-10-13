@@ -1,0 +1,15 @@
+# Size-limit allowlist for this repository (used by the pre-commit hook).
+#
+# One glob pattern per line, matched against the full repository-relative
+# path of each committed file (paths start with '/'):
+#
+#   *.blend                  any .blend file anywhere in the repository
+#   /trunk/assets/*.zip      only zips directly inside trunk/assets
+#   /vendor/*                everything below the vendor directory
+#
+# Files matching a pattern bypass the pre-commit size limit. Blank lines and
+# lines starting with '#' are ignored.
+#
+# This file lives on the server next to the hook scripts - it is not part of
+# the versioned content, so it can only be changed by someone with access to
+# the repository directory. Changes take effect from the next commit.

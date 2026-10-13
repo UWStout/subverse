@@ -1,10 +1,19 @@
 #!/bin/sh
 # pre-commit - default hook installed by the Accountant service.
 #
-# Rejects commits that add or modify a single file larger than the configured
-# limit, keeping oversized binaries out of course repositories.
+# Rejects commits that:
+#   1. carry a blank, too-short, meaningless ("changes") or offensive log
+#      message, or
+#   2. add or modify a single file larger than the configured size limit,
+#      keeping oversized binaries out of course repositories.
 #
-#   SVN_MAX_FILE_SIZE_MB  size limit in megabytes (default: 500)
+# Configuration (environment variables):
+#   SVN_MAX_FILE_SIZE_MB    size limit in megabytes (default: 500)
+#   SVN_MIN_MESSAGE_LENGTH  minimum log message length in characters (default: 8)
+#
+# Per-repository size-limit allowlist (see the file-size section below):
+#   <repo>/hooks/pre-commit-size-allowlist - one glob pattern per line;
+#   files whose repository path matches a pattern bypass the size limit.
 #
 # Environment provided by Subversion:
 #   $1  path to the repository
@@ -14,6 +23,74 @@
 REPO="$1"
 MAX_MB="${SVN_MAX_FILE_SIZE_MB:-500}"
 MAX_BYTES=$(( MAX_MB * 1024 * 1024 ))
+MIN_LEN="${SVN_MIN_MESSAGE_LENGTH:-8}"
+
+reject() {
+    echo "Commit rejected by pre-commit hook:" >&2
+    printf '%s\n' "$@" >&2
+    exit 1
+}
+
+# --- Log message validation -----------------------------------------------
+# Students frequently commit with blank, useless ("changes") or offensive
+# messages; reject them so a real description of the change gets written.
+
+msg=$(svnlook log -t "$TXN" "$REPO" 2>/dev/null) || msg=""
+
+# Lowercase the message and collapse every run of non-alphanumerics (spaces,
+# newlines, punctuation) into a single space: one line that is safe to
+# pattern-match, with leading/trailing spaces trimmed.
+normalized=$(printf '%s\n' "$msg" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' ' ' | sed -e 's/^ *//' -e 's/ *$//')
+
+# Count only the alphanumeric characters so whitespace cannot pad a short
+# message past the minimum.
+content=$(printf '%s\n' "$normalized" | tr -d ' \n')
+
+if [ -z "$normalized" ]; then
+    reject "  The commit message is empty." \
+           "  Describe what you changed and why (minimum ${MIN_LEN} characters)."
+fi
+
+if [ "${#content}" -lt "$MIN_LEN" ]; then
+    reject "  The commit message is too short (${#content} characters; minimum ${MIN_LEN})." \
+           "  Describe what you changed and why."
+fi
+
+# Messages that are a single well-known filler phrase, whatever their length.
+case "$normalized" in
+    changes|change|changed|update|updated|updates|stuff|misc|test|tests|wip|fix|fixed|asdf|asdfgh|qwerty|whatever|idk|"no idea"|"in progress")
+        reject "  '${normalized}' is not a useful commit message." \
+               "  Describe what you changed and why (minimum ${MIN_LEN} characters)."
+        ;;
+esac
+
+# Offensive language anywhere in the message.
+case "$normalized" in
+    *fuck*|*shit*|*bitch*|*cunt*|*bastard*|*asshole*|*dick*|*dumbass*)
+        reject "  The commit message contains offensive language." \
+               "  Rewrite it professionally and try again."
+        ;;
+esac
+
+# --- File size check --------------------------------------------------------
+# Files whose repository path matches a pattern in the per-repo allowlist
+# bypass the limit. The list lives next to this hook so each repository can
+# carry its own (<repo>/hooks/pre-commit-size-allowlist): one glob pattern
+# per line, matched against the full repository-relative path; blank lines
+# and '#' comments are ignored.
+ALLOWLIST="${REPO}/hooks/pre-commit-size-allowlist"
+patterns_file=""
+if [ -r "$ALLOWLIST" ]; then
+    patterns_file=$(mktemp) || patterns_file=""
+    if [ -n "$patterns_file" ]; then
+        trap 'rm -f "$patterns_file"' EXIT
+        # Trim surrounding whitespace (also absorbs CRLF from Windows-edited
+        # files), then drop blank lines and comments: one clean pattern per
+        # line. A list that contains no patterns simply yields an empty file.
+        sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$ALLOWLIST" \
+            | grep -v '^#' | grep -v '^$' > "$patterns_file" || true
+    fi
+fi
 
 changed=$(svnlook changed -t "$TXN" "$REPO") || exit 1
 
@@ -26,15 +103,23 @@ while IFS= read -r line; do
     # Deletions carry no content to size-check.
     [ "$action" = "D" ] && continue
 
+    # Allowlisted paths skip the size check (and the expensive cat) entirely:
+    # match the path against every allowlist pattern in turn.
+    if [ -s "$patterns_file" ]; then
+        allowed=0
+        while IFS= read -r pattern; do
+            case "$path" in $pattern) allowed=1; break ;; esac
+        done < "$patterns_file"
+        [ "$allowed" = 1 ] && continue
+    fi
+
     # `svnlook cat` fails for non-files (directories, props-only changes);
     # the empty output then measures 0 bytes and the entry is skipped.
     size=$(svnlook cat -t "$TXN" "$REPO" "$path" 2>/dev/null | wc -c)
 
     if [ "$size" -gt "$MAX_BYTES" ]; then
-        echo "Commit rejected by pre-commit hook:" >&2
-        echo "  $path is $(( size / 1024 / 1024 )) MB; the limit is ${MAX_MB} MB." >&2
-        echo "  Ask an instructor before committing files that large." >&2
-        exit 1
+        reject "  $path is $(( size / 1024 / 1024 )) MB; the limit is ${MAX_MB} MB." \
+               "  Ask an instructor before committing files that large (or allow-list the path in hooks/pre-commit-size-allowlist)."
     fi
 done <<EOF
 $changed

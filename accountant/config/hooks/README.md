@@ -12,7 +12,41 @@ repositories pick up the changes without rebuilding any image.
 
 | Hook | Purpose |
 |------|---------|
-| `pre-commit` | Rejects commits containing a single file larger than `SVN_MAX_FILE_SIZE_MB` (default 500 MB). |
+| `pre-commit` | Rejects commits with a blank, too-short, filler ("changes") or offensive log message, and commits containing a single file larger than `SVN_MAX_FILE_SIZE_MB` (default 500 MB). |
+
+## pre-commit configuration
+
+The thresholds are tunable via environment variables inherited by the hook
+process (set them on the `svn_gateway` service, e.g. in its docker-compose
+file); the phrase lists live in the script itself:
+
+- `SVN_MIN_MESSAGE_LENGTH` - minimum log message length in characters
+  (default: 8). Whitespace does not count toward the length.
+- `SVN_MAX_FILE_SIZE_MB` - maximum size for a single committed file in MB
+  (default: 500).
+
+The filler-phrase and offensive-language lists are plain `case` patterns near
+the top of the script; extend them as needed.
+
+## Size-limit allowlist (per repository)
+
+Each repository can carry its own allowlist at
+`<repo>/hooks/pre-commit-size-allowlist` - a commented template is installed
+with every new repository. One glob pattern per line, matched against the
+full repository-relative path of each committed file (paths start with `/`):
+
+```
+*.blend                  any .blend file anywhere in the repository
+/trunk/assets/*.zip      only zips directly inside trunk/assets
+/vendor/*                everything below the vendor directory
+```
+
+Files matching a pattern bypass the pre-commit size limit. Blank lines and
+lines starting with `#` are ignored.
+
+The file lives on the server next to the hook scripts - it is not part of
+the versioned content, so students cannot change it through a commit. Changes
+take effect from the next commit.
 | `post-commit` | Logs each commit (revision, author, message) to the container's stdout - visible via `docker logs`. |
 | `pre-revprop-change` | Denies all revision property changes so commit metadata cannot be rewritten. |
 
@@ -29,6 +63,6 @@ Scripts run as the `apache` user inside the SVN container and must be POSIX
 sh (the image is Alpine-based). Line endings are normalized to LF before
 installation, but keep them LF in this repository anyway.
 
-Note: these scripts are copied into each repository at creation time -
-editing a template does not update hooks already installed in existing
-repositories.
+Note: the files in this folder are copied into each repository at creation
+time - editing a template does not update what is already installed in
+existing repositories.
