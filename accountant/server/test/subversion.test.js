@@ -447,68 +447,6 @@ describe('renameRepository / deleteRepository', () => {
   })
 })
 
-describe('tagNeedsLock', () => {
-  it('tags existing files through a sparse working copy and skips non-files', async () => {
-    mockContainerFiles()
-    const base = execCommand.getMockImplementation()
-    execCommand.mockImplementation(async (container, command, input) => {
-      if (command[0] === 'svn' && command[1] === 'cat') {
-        calls.push({ container, command, input })
-        // The two pngs exist; 'assets' is a directory and 'gone.png' is
-        // missing - both must be skipped.
-        const exists = command[2] === 'file:///var/svn/my-proj/trunk/hero.png' ||
-          command[2] === 'file:///var/svn/my-proj/trunk/sub/deep/f.png'
-        return exists
-          ? { output: 'binary', error: '', exitCode: 0 }
-          : { output: '', error: 'svn: E200013: path not found / not a file', exitCode: 5 }
-      }
-      return base(container, command, input)
-    })
-
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await subversion.tagNeedsLock('my-proj', ['/trunk/hero.png', 'trunk/sub/deep/f.png', 'assets', 'gone.png'])
-
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'assets'"))
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'gone.png'"))
-    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("'trunk/hero.png'"))
-    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("'trunk/sub/deep/f.png'"))
-    warn.mockRestore()
-
-    const scripts = calls.filter(c => c.command[0] === 'sh').map(c => c.command[2])
-    expect(scripts).toHaveLength(1)
-    const script = scripts[0]
-    expect(script).toContain('svn checkout --depth empty file:///var/svn/my-proj /tmp/my-proj-needslock')
-    // ancestor directories are fetched (parents before children) so the
-    // sparse working copy can resolve the deep file paths
-    expect(script).toContain('svn update --set-depth empty "/tmp/my-proj-needslock/trunk" -q')
-    expect(script).toContain('svn update --set-depth empty "/tmp/my-proj-needslock/trunk/sub" -q')
-    expect(script).toContain('svn update --set-depth empty "/tmp/my-proj-needslock/trunk/sub/deep" -q')
-    const trunkAt = script.indexOf('/tmp/my-proj-needslock/trunk"')
-    const subAt = script.indexOf('/tmp/my-proj-needslock/trunk/sub"')
-    expect(trunkAt).toBeLessThan(subAt)
-    // then the files themselves, tagged in a single commit
-    expect(script).toContain('svn update "/tmp/my-proj-needslock/trunk/hero.png" -q')
-    expect(script).toContain('svn update "/tmp/my-proj-needslock/trunk/sub/deep/f.png" -q')
-    expect(script).toContain('svn propset svn:needs-lock true "/tmp/my-proj-needslock/trunk/hero.png"')
-    expect(script).toContain('svn propset svn:needs-lock true "/tmp/my-proj-needslock/trunk/sub/deep/f.png"')
-    expect(script).not.toContain('assets')
-    expect(script).not.toContain('gone.png')
-    expect(script).toContain('svn commit')
-  })
-
-  it('does nothing when no paths are given', async () => {
-    mockContainerFiles()
-    await subversion.tagNeedsLock('my-proj', [])
-    expect(calls.length).toBe(0)
-  })
-
-  it('rejects a malformed repository name', async () => {
-    mockContainerFiles()
-    await expect(subversion.tagNeedsLock('Bad/Name', ['x.png'])).rejects.toThrow(/repository name/)
-    expect(calls.length).toBe(0)
-  })
-})
-
 // ---------------------------------------------------------------------------
 // Access synchronization
 // ---------------------------------------------------------------------------

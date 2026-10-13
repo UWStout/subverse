@@ -14,13 +14,17 @@
 # Per-repository size-limit allowlist (see the file-size section below):
 #   <repo>/hooks/pre-commit-size-allowlist - one glob pattern per line;
 #   files whose repository path matches a pattern bypass the size limit.
-#
-# Environment provided by Subversion:
-#   $1  path to the repository
-#   $2  username of the committer
-#   TXN transaction of the commit being validated
 
+# Subversion invokes this hook with two arguments: the repository path and
+# the name of the commit transaction (see pre-commit.tmpl). Note that some
+# documentation describes TXN as an environment variable - this build passes
+# it as $2, so do not "fix" this back to ${TXN}.
+# svnlook is addressed by absolute path because the hook's PATH is not under
+# our control; the override exists so the test suite can inject a fake.
+SVNLOOK="${SVNLOOK:-/usr/bin/svnlook}"
 REPO="$1"
+TXN="$2"
+
 MAX_MB="${SVN_MAX_FILE_SIZE_MB:-500}"
 MAX_BYTES=$(( MAX_MB * 1024 * 1024 ))
 MIN_LEN="${SVN_MIN_MESSAGE_LENGTH:-8}"
@@ -35,7 +39,7 @@ reject() {
 # Students frequently commit with blank, useless ("changes") or offensive
 # messages; reject them so a real description of the change gets written.
 
-msg=$(svnlook log -t "$TXN" "$REPO" 2>/dev/null) || msg=""
+msg=$($SVNLOOK log -t "$TXN" "$REPO" 2>/dev/null) || msg=""
 
 # Lowercase the message and collapse every run of non-alphanumerics (spaces,
 # newlines, punctuation) into a single space: one line that is safe to
@@ -92,7 +96,7 @@ if [ -r "$ALLOWLIST" ]; then
     fi
 fi
 
-changed=$(svnlook changed -t "$TXN" "$REPO") || exit 1
+changed=$($SVNLOOK changed -t "$TXN" "$REPO") || exit 1
 
 # Lines look like "A /trunk/path", "M /trunk/path (props)", "D /trunk/path".
 while IFS= read -r line; do
@@ -115,7 +119,7 @@ while IFS= read -r line; do
 
     # `svnlook cat` fails for non-files (directories, props-only changes);
     # the empty output then measures 0 bytes and the entry is skipped.
-    size=$(svnlook cat -t "$TXN" "$REPO" "$path" 2>/dev/null | wc -c)
+    size=$($SVNLOOK cat -t "$TXN" "$REPO" "$path" 2>/dev/null | wc -c)
 
     if [ "$size" -gt "$MAX_BYTES" ]; then
         reject "  $path is $(( size / 1024 / 1024 )) MB; the limit is ${MAX_MB} MB." \

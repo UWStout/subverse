@@ -5,12 +5,13 @@
 # revprops rewritten after the fact, and allowing it would let anyone with
 # write access alter commit metadata (log messages, authors, dates).
 #
-# Environment provided by Subversion:
+# Arguments provided by Subversion (see pre-revprop-change.tmpl):
 #   $1  path to the repository
-#   $2  username of the user making the change
+#   $2  path of the item whose property is changing (repo-relative)
 #   $3  revision whose property is being changed
-#   $4  name of the property
-#   $5  action (SET, CHANGE or DELETE)
+#   $4  username of the user making the change
+#   $5  name of the property
+#   $6  action (SET, CHANGE or DELETE)
 
 echo "Revision property changes are disabled on this server." >&2
 echo "Contact an administrator if you believe this is a mistake." >&2

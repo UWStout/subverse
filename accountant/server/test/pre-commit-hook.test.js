@@ -36,12 +36,15 @@ describe.skipIf(!SH)('pre-commit hook (config/hooks/pre-commit)', () => {
   })
 
   /**
-   * Run the real pre-commit hook against a fake svnlook. The fake answers
-   * `log` with FAKE_LOG_FILE, `changed` with FAKE_CHANGED_FILE, and `cat`
-   * with FAKE_CAT_FILE - but only when the requested path equals
-   * FAKE_BIG_FILE (anything else fails like a real cat on a directory or
-   * missing file). Defaults model an empty transaction. Returns { status,
-   * stderr }.
+   * Run the real pre-commit hook against a fake svnlook. The hook is
+   * invoked with the same argument contract as Subversion: $1 = repository
+   * path, $2 = transaction name (TXN is NOT an environment variable in this
+   * build). The fake answers `log` with FAKE_LOG_FILE, `changed` with
+   * FAKE_CHANGED_FILE, and `cat` with FAKE_CAT_FILE - but only when the
+   * requested path equals FAKE_BIG_FILE (anything else fails like a real cat
+   * on a directory or missing file), and every subcommand fails on an empty
+   * transaction name just like the real svnlook. Defaults model an empty
+   * transaction. Returns { status, stderr }.
    */
   async function runHook ({ message = '', changed = '', catContent = '', catForPath = null, extraEnv = {}, hookPath, repoDir = null } = {}) {
     const binDir = path.join(tmpDir, 'bin')
@@ -49,9 +52,14 @@ describe.skipIf(!SH)('pre-commit hook (config/hooks/pre-commit)', () => {
     const fakeSvnlook = [
       '#!/bin/sh',
       'case "$1" in',
-      '  log) cat "$FAKE_LOG_FILE" 2>/dev/null ;;',
-      '  changed) cat "$FAKE_CHANGED_FILE" 2>/dev/null ;;',
+      '  log)',
+      '    [ -n "$3" ] || exit 1',
+      '    cat "$FAKE_LOG_FILE" 2>/dev/null ;;',
+      '  changed)',
+      '    [ -n "$3" ] || exit 1',
+      '    cat "$FAKE_CHANGED_FILE" 2>/dev/null ;;',
       '  cat)',
+      '    [ -n "$3" ] || exit 1',
       '    if [ -n "$FAKE_BIG_FILE" ] && [ "$5" = "$FAKE_BIG_FILE" ]; then cat "$FAKE_CAT_FILE" 2>/dev/null; else exit 1; fi ;;',
       'esac',
       'exit 0'
@@ -63,12 +71,12 @@ describe.skipIf(!SH)('pre-commit hook (config/hooks/pre-commit)', () => {
     await writeFile(path.join(binDir, 'svnlook'), fakeSvnlook)
     await chmod(path.join(binDir, 'svnlook'), 0o755)
 
-    const result = spawnSync(SH, [hookPath ?? path.join(HOOKS_DIR, 'pre-commit'), repoDir ?? '/fake/repo', 'student1'], {
+    const result = spawnSync(SH, [hookPath ?? path.join(HOOKS_DIR, 'pre-commit'), repoDir ?? '/fake/repo', 'txn123'], {
       encoding: 'utf8',
       env: {
         ...process.env,
         PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
-        TXN: 'txn123',
+        SVNLOOK: path.join(binDir, 'svnlook'),
         FAKE_LOG_FILE: path.join(tmpDir, 'log.txt'),
         FAKE_CHANGED_FILE: path.join(tmpDir, 'changed.txt'),
         FAKE_CAT_FILE: path.join(tmpDir, 'catfile'),

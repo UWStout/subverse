@@ -4,13 +4,19 @@
 # Logs every commit to the container's stdout so it shows up in
 # `docker logs <container>`: revision, author and message.
 
+# Subversion invokes this hook with at least the repository path as $1;
+# per post-commit.tmpl $2 is the new revision number, but we resolve the
+# revision with `svnlook latest` so the log line stays correct even if a
+# build passes different arguments.
+# svnlook is addressed by absolute path because the hook's PATH is not under
+# our control; the override exists so tests can inject a fake.
+SVNLOOK="${SVNLOOK:-/usr/bin/svnlook}"
 REPO="$1"
-COMMITTER="$2"
 
-NEWREV=$(svnlook latest "$REPO") || exit 0
+NEWREV=$($SVNLOOK latest "$REPO") || exit 0
 
-echo "[svn] r${NEWREV} by ${COMMITTER} in $(basename "$REPO")"
-svnlook log -r "${NEWREV}" "$REPO" | sed 's/^/    /'
+echo "[svn] r${NEWREV} by $($SVNLOOK author -r "${NEWREV}" "$REPO" 2>/dev/null) in $(basename "$REPO")"
+$SVNLOOK log -r "${NEWREV}" "$REPO" | sed 's/^/    /'
 
 # A post-commit failure cannot undo the commit; never block on logging.
 exit 0
