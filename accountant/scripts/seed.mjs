@@ -148,7 +148,7 @@ CLASSES.forEach((cls, ci) => {
 const shuffledTeachers = shuffle(teachers)
 
 /** Three projects per offering; titles are unique within each class. */
-const projects = [] // { offeringIndex, title, slug, type, subversion_url, git_url, description }
+const projects = [] // { offeringIndex, title, slug, type, repository_url, repository_type, description }
 const usedSlugs = new Set()
 offerings.forEach((offering, oi) => {
   const cls = CLASSES[offering.classIndex]
@@ -157,13 +157,16 @@ offerings.forEach((offering, oi) => {
     const slug = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${offering.term.toLowerCase()}-${offering.section}`
     if (usedSlugs.has(slug)) throw new Error(`Generated duplicate project slug "${slug}"`)
     usedSlugs.add(slug)
+    const useGit = rand() < 0.5
     projects.push({
       offeringIndex: oi,
       title,
       slug,
       type: PROJECT_TYPES[Math.floor(rand() * PROJECT_TYPES.length)],
-      subversion_url: `https://svn.university.edu/courses/${cls.subject}${cls.number}/${offering.term.toLowerCase()}/${offering.section}/${slug}`,
-      git_url: rand() < 0.5 ? `https://git.university.edu/courses/${cls.subject}${cls.number}/${slug}.git` : null,
+      repository_url: useGit
+        ? `https://git.university.edu/courses/${cls.subject}${cls.number}/${slug}.git`
+        : `https://svn.university.edu/courses/${cls.subject}${cls.number}/${offering.term.toLowerCase()}/${offering.section}/${slug}`,
+      repository_type: useGit ? 'GIT' : 'SUBVERSION',
       description: `${title}: team project for ${cls.subject} ${cls.number} (${offering.term}, section ${offering.section}).`
     })
   }
@@ -284,8 +287,8 @@ try {
           title: project.title,
           slug: project.slug,
           type: project.type,
-          subversion_url: project.subversion_url,
-          git_url: project.git_url,
+          repository_url: project.repository_url,
+          repository_type: project.repository_type,
           description: project.description
         }
       }))

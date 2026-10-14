@@ -91,14 +91,9 @@ export default function ProjectDetailsDialog ({ open, project, onClose }) {
             {data.description && (
               <Field label='Description'>{data.description}</Field>
             )}
-            {data.subversion_url && (
-              <Field label='SVN URL'>
-                <Typography component='span' variant='body2' sx={{ wordBreak: 'break-all' }}>{data.subversion_url}</Typography>
-              </Field>
-            )}
-            {data.git_url && (
-              <Field label='Git URL'>
-                <Typography component='span' variant='body2' sx={{ wordBreak: 'break-all' }}>{data.git_url}</Typography>
+            {data.repository_url && (
+              <Field label={`Repository (${data.repository_type ?? 'SUBVERSION'})`}>
+                <Typography component='span' variant='body2' sx={{ wordBreak: 'break-all' }}>{data.repository_url}</Typography>
               </Field>
             )}
 

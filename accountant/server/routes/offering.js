@@ -127,7 +127,7 @@ offeringRouter.get('/:id', async (req, res) => {
         class: { select: { id: true, subject: true, number: true, title: true } },
         teacher: { select: { id: true, username: true, email: true } },
         projects: {
-          select: { id: true, title: true, slug: true, subversion_url: true, git_url: true },
+          select: { id: true, title: true, slug: true, repository_url: true, repository_type: true },
           orderBy: { id: 'asc' }
         }
       }

@@ -79,6 +79,25 @@ function isValidProjectType (type) {
   return PROJECT_TYPES.includes(type)
 }
 
+// Allowed values for Project.repository_type - mirrors the RepositoryType
+// enum in prisma/schema.prisma. Keep the two in sync when the enum changes.
+const REPOSITORY_TYPES = ['SUBVERSION', 'GIT', 'PERFORCE', 'LORE', 'OTHER']
+const REPOSITORY_TYPE_ERROR = `Invalid repository_type, expected one of: ${REPOSITORY_TYPES.join(', ')}`
+
+function isValidRepositoryType (repositoryType) {
+  return REPOSITORY_TYPES.includes(repositoryType)
+}
+
+// Public base URL of the SVN service. Used to build repository_url for the
+// default repositories the server creates (base + '/' + slug). Trailing
+// slashes are normalized so both 'https://host/svn' and 'https://host/svn/'
+// work. Override with the SVN_PUBLIC_BASE_URL environment variable.
+const SVN_PUBLIC_BASE_URL = (process.env.SVN_PUBLIC_BASE_URL || 'https://svn.subverse/svn/').replace(/\/+$/, '')
+
+function defaultSvnRepositoryUrl (slug) {
+  return `${SVN_PUBLIC_BASE_URL}/${slug}`
+}
+
 // --- Routes (specific paths first, parameterized last) ---
 
 // Create Project post route
@@ -89,7 +108,7 @@ projectRouter.post('/create', async (req, res) => {
       return res.status(403).json({ error: 'Students cannot create projects' })
     }
 
-    const { offering_id, title, slug, type, subversion_url, git_url, description } = req.body
+    const { offering_id, title, slug, type, repository_url, repository_type, description, create_subversion_repo } = req.body
 
     // Validate required fields
     if (!offering_id || !title || !slug) {
@@ -106,6 +125,17 @@ projectRouter.post('/create', async (req, res) => {
       return res.status(400).json({ error: TYPE_ERROR })
     }
 
+    // Validate the repository type (defaults to SUBVERSION when omitted)
+    if (repository_type !== undefined && !isValidRepositoryType(repository_type)) {
+      return res.status(400).json({ error: REPOSITORY_TYPE_ERROR })
+    }
+
+    // A project whose code lives outside the default SVN server must record
+    // where it is - otherwise students have no way to find the repository.
+    if (create_subversion_repo === false && !String(repository_url ?? '').trim()) {
+      return res.status(400).json({ error: 'repository_url is required when not creating a default Subversion repository' })
+    }
+
     // Verify the offering exists
     const offering = await getDb().offering.findUnique({ where: { id: parseInt(offering_id, 10) } })
     if (!offering) {
@@ -117,26 +147,40 @@ projectRouter.post('/create', async (req, res) => {
       return res.status(403).json({ error: 'Teachers can only create projects in classes they teach' })
     }
 
-    const project = await getDb().project.create({
-      data: {
-        offering_id: parseInt(offering_id, 10),
-        title,
-        slug,
-        ...(type !== undefined && { type }),
-        subversion_url: subversion_url ?? null,
-        git_url: git_url ?? null,
-        description: description ?? null
-      }
-    })
+    const createDefaultSvnRepo = create_subversion_repo !== false
+
+    const data = {
+      offering_id: parseInt(offering_id, 10),
+      title,
+      slug,
+      ...(type !== undefined && { type }),
+      description: description ?? null
+    }
+
+    if (createDefaultSvnRepo) {
+      // The repository's location is known (base URL + slug) and its type is
+      // by definition SUBVERSION - derived here rather than trusted from the
+      // client.
+      data.repository_url = defaultSvnRepositoryUrl(slug)
+      data.repository_type = 'SUBVERSION'
+    } else {
+      data.repository_url = repository_url ?? null
+      if (repository_type !== undefined) data.repository_type = repository_type
+    }
+
+    const project = await getDb().project.create({ data })
 
     // Mirror the new project into the SVN server: create the repository with
     // its standard structure and default properties, then sync access so the
-    // offering teacher already has r/w.
-    await bestEffortSvn(`create project '${slug}'`, async () => {
-      await createRepository(project)
-      const full = await getDb().project.findUnique({ where: { id: project.id }, include: SVN_SYNC_INCLUDE })
-      await synchronizeRepositoryAccess(full)
-    })
+    // offering teacher already has r/w. Skipped entirely when the project's
+    // code lives in an external repository (create_subversion_repo === false).
+    if (createDefaultSvnRepo) {
+      await bestEffortSvn(`create project '${slug}'`, async () => {
+        await createRepository(project)
+        const full = await getDb().project.findUnique({ where: { id: project.id }, include: SVN_SYNC_INCLUDE })
+        await synchronizeRepositoryAccess(full)
+      })
+    }
 
     res.status(201).json(project)
   } catch (err) {
@@ -158,10 +202,10 @@ projectRouter.post('/update/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid project ID' })
     }
 
-    const { offering_id, title, slug, type, subversion_url, git_url, description } = req.body
+    const { offering_id, title, slug, type, repository_url, repository_type, description } = req.body
 
     // Validate that at least one update field is provided
-    if (title === undefined && slug === undefined && type === undefined && subversion_url === undefined && git_url === undefined && description === undefined && offering_id === undefined) {
+    if (title === undefined && slug === undefined && type === undefined && repository_url === undefined && repository_type === undefined && description === undefined && offering_id === undefined) {
       return res.status(400).json({ error: 'No update fields provided' })
     }
 
@@ -173,6 +217,11 @@ projectRouter.post('/update/:id', async (req, res) => {
     // Validate the engine type if it is being changed (must be a known value)
     if (type !== undefined && !isValidProjectType(type)) {
       return res.status(400).json({ error: TYPE_ERROR })
+    }
+
+    // Validate the repository type if it is being changed (must be a known value)
+    if (repository_type !== undefined && !isValidRepositoryType(repository_type)) {
+      return res.status(400).json({ error: REPOSITORY_TYPE_ERROR })
     }
 
     // Check project exists
@@ -207,8 +256,8 @@ projectRouter.post('/update/:id', async (req, res) => {
         ...(title !== undefined && { title }),
         ...(slug !== undefined && { slug }),
         ...(type !== undefined && { type }),
-        ...(subversion_url !== undefined && { subversion_url: subversion_url ?? null }),
-        ...(git_url !== undefined && { git_url: git_url ?? null }),
+        ...(repository_url !== undefined && { repository_url: repository_url ?? null }),
+        ...(repository_type !== undefined && { repository_type }),
         ...(description !== undefined && { description }),
         ...(offering_id !== undefined && { offering_id: parseInt(offering_id, 10) })
       }

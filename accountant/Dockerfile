@@ -25,8 +25,10 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 RUN npm ci --omit=dev --legacy-peer-deps
 
-# Copy server source, shared files, config files, and built frontend from build stage
+# Copy server source, scripts, shared files, config files, and built frontend
+# from build stage (scripts/ holds the entrypoint's one-time DB migrations)
 COPY server/ ./server/
+COPY scripts/ ./scripts/
 COPY prod.env ./.env
 COPY --from=build /usr/src/app/shared/ ./shared/
 COPY --from=build /usr/src/app/config/ ./config/

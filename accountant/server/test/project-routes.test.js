@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
-import { mockPrisma, TEST_CLASS, TEST_OFFERING, TEST_PROJECT, authedApp, makeToken } from './setup.js'
+import { mockPrisma, mockSubversion, TEST_CLASS, TEST_OFFERING, TEST_PROJECT, authedApp, makeToken } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -443,30 +443,95 @@ describe('Project API Routes', () => {
       expect(mockPrisma.project.create).not.toHaveBeenCalled()
     })
 
-    it('creates a project with git_url', async () => {
+    it('creates the default Subversion repository when create_subversion_repo is omitted', async () => {
       mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
-      const projectWithGit = { ...TEST_PROJECT, git_url: 'https://github.com/example/my-repo.git' }
-      mockPrisma.project.create.mockResolvedValue(projectWithGit)
+      mockPrisma.project.create.mockResolvedValue(TEST_PROJECT)
 
       const res = await request(app)
         .post('/project/create')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
-        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', git_url: 'https://github.com/example/my-repo.git' })
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
       expect(res.status).toBe(201)
-      expect(res.body.git_url).toBe('https://github.com/example/my-repo.git')
+      // repository_url is derived from the SVN base URL and the type is pinned
+      expect(mockPrisma.project.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          repository_url: 'https://svn.subverse/svn/new-project',
+          repository_type: 'SUBVERSION'
+        })
+      }))
+      // The SVN repo is created and access is synced
+      expect(mockSubversion.createRepository).toHaveBeenCalledTimes(1)
+      expect(mockSubversion.synchronizeRepositoryAccess).toHaveBeenCalledTimes(1)
     })
 
-    it('creates a project with subversion_url', async () => {
+    it('derives repository_url from the SVN_PUBLIC_BASE_URL environment variable', async () => {
+      const original = process.env.SVN_PUBLIC_BASE_URL
+      try {
+        // No trailing slash - verifies normalization as well
+        process.env.SVN_PUBLIC_BASE_URL = 'https://svn.example.org/repo'
+        // Re-import the router so the module-level env read picks up the new value
+        const freshRouter = await getProjectRouter()
+        const express = await import('express')
+        const rawApp = express.default()
+        rawApp.use('/project/', freshRouter)
+        const customApp = authedApp(rawApp)
+
+        mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+        mockPrisma.project.create.mockResolvedValue(TEST_PROJECT)
+
+        const res = await request(customApp)
+          .post('/project/create')
+          .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+          .send({ offering_id: 1, title: 'New Project', slug: 'new-project' })
+        expect(res.status).toBe(201)
+        expect(mockPrisma.project.create).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({ repository_url: 'https://svn.example.org/repo/new-project' })
+        }))
+      } finally {
+        if (original === undefined) delete process.env.SVN_PUBLIC_BASE_URL
+        else process.env.SVN_PUBLIC_BASE_URL = original
+      }
+    })
+
+    it('stores repository_url / repository_type and skips SVN creation when create_subversion_repo is false', async () => {
       mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
-      const projectWithSvn = { ...TEST_PROJECT, subversion_url: 'https://svn.example.com/repos/my-repo' }
-      mockPrisma.project.create.mockResolvedValue(projectWithSvn)
+      const projectWithRepo = { ...TEST_PROJECT, repository_url: 'https://git.example.com/repos/my-repo.git', repository_type: 'GIT' }
+      mockPrisma.project.create.mockResolvedValue(projectWithRepo)
 
       const res = await request(app)
         .post('/project/create')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
-        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', subversion_url: 'https://svn.example.com/repos/my-repo' })
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', create_subversion_repo: false, repository_url: 'https://git.example.com/repos/my-repo.git', repository_type: 'GIT' })
       expect(res.status).toBe(201)
-      expect(res.body.subversion_url).toBe('https://svn.example.com/repos/my-repo')
+      expect(res.body.repository_url).toBe('https://git.example.com/repos/my-repo.git')
+      expect(res.body.repository_type).toBe('GIT')
+      // No SVN repo is created and no account sync runs for external repos
+      expect(mockSubversion.createRepository).not.toHaveBeenCalled()
+      expect(mockSubversion.synchronizeRepositoryAccess).not.toHaveBeenCalled()
+    })
+
+    it('requires repository_url when create_subversion_repo is false', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+
+      const res = await request(app)
+        .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', create_subversion_repo: false })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/repository_url is required/)
+      expect(mockPrisma.project.create).not.toHaveBeenCalled()
+    })
+
+    it('rejects an unknown repository_type', async () => {
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING)
+
+      const res = await request(app)
+        .post('/project/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+        .send({ offering_id: 1, title: 'New Project', slug: 'new-project', repository_type: 'MERCURIAL' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/repository_type/)
+      expect(mockPrisma.project.create).not.toHaveBeenCalled()
     })
 
     it('creates a project with description', async () => {
@@ -672,40 +737,40 @@ describe('Project API Routes', () => {
       expect(mockPrisma.project.update).not.toHaveBeenCalled()
     })
 
-    it('updates git_url successfully', async () => {
+    it('updates repository_url successfully', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
-      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, git_url: 'https://gitlab.com/example/new-repo.git' })
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, repository_url: 'https://gitlab.com/example/new-repo.git' })
 
       const res = await request(app)
         .post('/project/update/1')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
-        .send({ git_url: 'https://gitlab.com/example/new-repo.git' })
+        .send({ repository_url: 'https://gitlab.com/example/new-repo.git' })
       expect(res.status).toBe(200)
-      expect(res.body.git_url).toBe('https://gitlab.com/example/new-repo.git')
+      expect(res.body.repository_url).toBe('https://gitlab.com/example/new-repo.git')
     })
 
-    it('updates subversion_url successfully', async () => {
+    it('updates repository_type successfully', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
-      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, subversion_url: 'https://svn.example.com/repos/new-repo' })
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, repository_type: 'PERFORCE' })
 
       const res = await request(app)
         .post('/project/update/1')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
-        .send({ subversion_url: 'https://svn.example.com/repos/new-repo' })
+        .send({ repository_type: 'PERFORCE' })
       expect(res.status).toBe(200)
-      expect(res.body.subversion_url).toBe('https://svn.example.com/repos/new-repo')
+      expect(res.body.repository_type).toBe('PERFORCE')
     })
 
-    it('clears git_url when set to empty string', async () => {
+    it('clears repository_url when set to empty string', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
-      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, git_url: null })
+      mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, repository_url: null })
 
       const res = await request(app)
         .post('/project/update/1')
         .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
-        .send({ git_url: '' })
+        .send({ repository_url: '' })
       expect(res.status).toBe(200)
-      expect(res.body.git_url).toBeNull()
+      expect(res.body.repository_url).toBeNull()
     })
 
     it('updates offering_id successfully after validating the new offering exists (admin)', async () => {

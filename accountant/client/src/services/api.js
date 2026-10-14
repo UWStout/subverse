@@ -272,7 +272,7 @@ export async function fetchProject (id) {
 }
 
 /** POST /project/create */
-export async function createProject ({ offeringId, title, slug, type, subversionUrl, gitUrl, description }) {
+export async function createProject ({ offeringId, title, slug, type, repositoryUrl, repositoryType, description, createSubversionRepo }) {
   const res = await fetch(`${BASE}/project/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -281,8 +281,9 @@ export async function createProject ({ offeringId, title, slug, type, subversion
       title,
       slug,
       ...(type !== undefined && { type }),
-      subversion_url: subversionUrl ?? null,
-      git_url: gitUrl ?? null,
+      repository_url: repositoryUrl ?? null,
+      ...(repositoryType !== undefined && { repository_type: repositoryType }),
+      ...(createSubversionRepo !== undefined && { create_subversion_repo: createSubversionRepo }),
       description: description ?? null
     })
   })
@@ -295,14 +296,14 @@ export async function createProject ({ offeringId, title, slug, type, subversion
 }
 
 /** POST /project/update/:id - only fields that are defined are sent (partial update). */
-export async function updateProject (id, { offeringId, title, slug, type, subversionUrl, gitUrl, description }) {
+export async function updateProject (id, { offeringId, title, slug, type, repositoryUrl, repositoryType, description }) {
   const payload = {}
   if (offeringId !== undefined) payload.offering_id = offeringId
   if (title !== undefined) payload.title = title
   if (slug !== undefined) payload.slug = slug
   if (type !== undefined) payload.type = type
-  if (subversionUrl !== undefined) payload.subversion_url = subversionUrl
-  if (gitUrl !== undefined) payload.git_url = gitUrl
+  if (repositoryUrl !== undefined) payload.repository_url = repositoryUrl
+  if (repositoryType !== undefined) payload.repository_type = repositoryType
   if (description !== undefined) payload.description = description
 
   const res = await fetch(`${BASE}/project/update/${id}`, {

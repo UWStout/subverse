@@ -33,8 +33,8 @@ const PROJECT_1 = {
   title: 'Final Project',
   slug: 'final-project',
   type: 'UNITY_ENGINE',
-  subversion_url: null,
-  git_url: 'https://github.com/example/final-project.git',
+  repository_url: 'https://github.com/example/final-project.git',
+  repository_type: 'GIT',
   description: 'Complete final assignment for the course'
 }
 
@@ -128,30 +128,78 @@ describe('ProjectForm', () => {
     expect(createProject).not.toHaveBeenCalled()
   })
 
-  it('creates a project with the selected values', async () => {
+  it('creates a project with the selected values (default SVN repo checked)', async () => {
     const { onClose, onSubmit } = renderForm({ open: true })
     await waitOptionsLoaded()
+
+    // The "create default Subversion repository" checkbox is checked by
+    // default, so no repository type / URL fields are shown
+    expect(screen.getByLabelText('Create default Subversion repository')).toBeChecked()
+    expect(screen.queryByLabelText('Repository URL')).not.toBeInTheDocument()
 
     await selectOption('Offering', 'CS 101 – FALL25 101')
     await user.type(screen.getByLabelText('Title'), 'Final Project')
     await user.type(screen.getByLabelText('Slug'), 'final-project')
-    await user.type(screen.getByLabelText('Git URL'), 'https://github.com/example/final-project.git')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
-    // The type select defaults to OTHER; empty optional fields are sent as null
+    // The project type select defaults to OTHER; the server creates the SVN
+    // repo, so no repository fields are sent
     expect(createProject).toHaveBeenCalledWith({
       offeringId: 1,
       title: 'Final Project',
       slug: 'final-project',
       type: 'OTHER',
-      subversionUrl: null,
-      gitUrl: 'https://github.com/example/final-project.git',
-      description: null
+      description: null,
+      createSubversionRepo: true
     })
     // Success notifies the page and closes the dialog
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows repository fields and skips SVN creation when the checkbox is unchecked', async () => {
+    const { onClose, onSubmit } = renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    await user.click(screen.getByLabelText('Create default Subversion repository'))
+    // Unchecking reveals the external-repository fields
+    expect(await screen.findByLabelText('Repository URL')).toBeInTheDocument()
+
+    await selectOption('Offering', 'CS 101 – FALL25 101')
+    await user.type(screen.getByLabelText('Title'), 'Final Project')
+    await user.type(screen.getByLabelText('Slug'), 'final-project')
+    await user.type(screen.getByLabelText('Repository URL'), 'https://github.com/example/final-project.git')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(createProject).toHaveBeenCalledWith({
+      offeringId: 1,
+      title: 'Final Project',
+      slug: 'final-project',
+      type: 'OTHER',
+      description: null,
+      createSubversionRepo: false,
+      repositoryType: 'SUBVERSION',
+      repositoryUrl: 'https://github.com/example/final-project.git'
+    })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires a repository URL when the checkbox is unchecked', async () => {
+    renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    await user.click(screen.getByLabelText('Create default Subversion repository'))
+    await selectOption('Offering', 'CS 101 – FALL25 101')
+    await user.type(screen.getByLabelText('Title'), 'Final Project')
+    await user.type(screen.getByLabelText('Slug'), 'final-project')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText(/repository url is required/i)).toBeInTheDocument()
+    expect(createProject).not.toHaveBeenCalled()
   })
 
   it('sends the selected project type on create', async () => {
@@ -183,11 +231,12 @@ describe('ProjectForm', () => {
     // Text fields are available immediately
     expect(screen.getByLabelText('Title')).toHaveValue('Final Project')
     expect(screen.getByLabelText('Slug')).toHaveValue('final-project')
-    expect(screen.getByLabelText('Git URL')).toHaveValue('https://github.com/example/final-project.git')
+    expect(screen.getByLabelText('Repository URL')).toHaveValue('https://github.com/example/final-project.git')
     expect(screen.getByLabelText('Description')).toHaveValue('Complete final assignment for the course')
     // The selects show their chosen values once the options have loaded
     expect(await screen.findByText('CS 101 – FALL25 101')).toBeInTheDocument()
     expect(screen.getByText('Unity')).toBeInTheDocument()
+    expect(screen.getByText('Git')).toBeInTheDocument()
   })
 
   it('updates an existing project when saved', async () => {
@@ -204,8 +253,8 @@ describe('ProjectForm', () => {
       title: 'Renamed Project',
       slug: 'final-project',
       type: 'UNITY_ENGINE',
-      subversionUrl: null,
-      gitUrl: 'https://github.com/example/final-project.git',
+      repositoryType: 'GIT',
+      repositoryUrl: 'https://github.com/example/final-project.git',
       description: 'Complete final assignment for the course'
     })
     // Success notifies the page and closes the dialog
@@ -217,13 +266,13 @@ describe('ProjectForm', () => {
     const { onSubmit } = renderForm({ open: true, project: PROJECT_1 })
     await waitOptionsLoaded()
 
-    await user.clear(screen.getByLabelText('Git URL'))
+    await user.clear(screen.getByLabelText('Repository URL'))
 
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
     expect(updateProject).toHaveBeenCalledWith(
       1,
-      expect.objectContaining({ gitUrl: null })
+      expect.objectContaining({ repositoryUrl: null })
     )
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })

@@ -96,9 +96,9 @@ export default function OfferingDetailsDialog ({ open, offering, onClose }) {
               {projects.map(p => (
                 <Box key={p.id} sx={{ py: 0.5 }}>
                   <Typography variant='body2'>{p.title}</Typography>
-                  {(p.git_url || p.subversion_url) && (
+                  {p.repository_url && (
                     <Typography variant='caption' color='text.secondary' sx={{ wordBreak: 'break-all' }}>
-                      {p.git_url || p.subversion_url}
+                      {p.repository_url}
                     </Typography>
                   )}
                 </Box>

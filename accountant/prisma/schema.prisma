@@ -77,8 +77,8 @@ model Project {
   title            String
   slug             String   @unique
   type             ProjectType @default(OTHER)
-  subversion_url   String?  @map("subversion_url")
-  git_url          String?  @map("git_url")
+  repository_url   String?        @map("repository_url")
+  repository_type  RepositoryType @default(SUBVERSION)
   description      String?
 
   offering         Offering @relation(fields: [offering_id], references: [id], onDelete: Cascade)
@@ -92,6 +92,15 @@ enum ProjectType {
   UNITY_ENGINE
   UNREAL_ENGINE_5
   GODOT
+  OTHER
+}
+
+// Kind of version-control system backing a project's repository_url.
+enum RepositoryType {
+  SUBVERSION
+  GIT
+  PERFORCE
+  LORE
   OTHER
 }
 

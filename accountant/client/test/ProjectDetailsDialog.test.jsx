@@ -16,8 +16,8 @@ const FULL_PROJECT = {
   title: 'DevOps Dashboard',
   slug: 'devops-dashboard-fall25-101',
   description: 'A simulated release pipeline for the practicum.',
-  subversion_url: 'https://svn.university.edu/courses/CS458/fall25/101/devops-dashboard-fall25-101',
-  git_url: null,
+  repository_url: 'https://svn.university.edu/courses/CS458/fall25/101/devops-dashboard-fall25-101',
+  repository_type: 'SUBVERSION',
   offering: {
     id: 1,
     term: 'FALL25',

@@ -279,7 +279,7 @@ export default function Projects () {
                     <TableCell>{p.title}</TableCell>
                     <TableCell>{classLabel(p)}</TableCell>
                     <TableCell>{offeringById.get(p.offering_id)?.term || ''}</TableCell>
-                    <TableCell>{p.git_url || p.subversion_url || ''}</TableCell>
+                    <TableCell>{p.repository_url || ''}</TableCell>
                     <TableCell align='right'>
                       <Tooltip title='Details'>
                         <IconButton size='small' onClick={() => setDetailsProject(p)}>

@@ -24,15 +24,15 @@ const FULL_OFFERING = {
       id: 10,
       title: 'DevOps Dashboard',
       slug: 'devops-dashboard-fall25-101',
-      subversion_url: 'https://svn.university.edu/courses/CS458/fall25/101/devops-dashboard-fall25-101',
-      git_url: null
+      repository_url: 'https://svn.university.edu/courses/CS458/fall25/101/devops-dashboard-fall25-101',
+      repository_type: 'SUBVERSION'
     },
     {
       id: 11,
       title: 'CI Sandbox',
       slug: 'ci-sandbox-fall25-101',
-      subversion_url: null,
-      git_url: 'https://git.university.edu/courses/CS458/ci-sandbox-fall25-101.git'
+      repository_url: 'https://git.university.edu/courses/CS458/ci-sandbox-fall25-101.git',
+      repository_type: 'GIT'
     }
   ]
 }

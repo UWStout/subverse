@@ -7,7 +7,28 @@ export default defineConfig({
   build: {
     // Relative to root ('client'), so '../public' lands in the project root
     outDir: '../public',
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Vendor libraries get their own stable chunks: they rarely change,
+        // so students keep a cached copy across deploys, and no single chunk
+        // trips Vite's 500 kB warning. App code (which changes often) stays
+        // in the per-route chunks created by React.lazy in App.jsx.
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) return null
+          if (id.includes('@mui/') || id.includes('@emotion/')) return 'vendor-mui'
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('react-router') ||
+            id.includes('/scheduler/')
+          ) {
+            return 'vendor-react'
+          }
+          return 'vendor'
+        }
+      }
+    }
   },
   server: {
     port: 5173,

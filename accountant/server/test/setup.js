@@ -224,8 +224,8 @@ export const TEST_PROJECT = {
   offering_id: 1,
   title: 'Final Project',
   slug: 'final-project',
-  subversion_url: null,
-  git_url: 'https://github.com/example/final-project.git',
+  repository_url: 'https://github.com/example/final-project.git',
+  repository_type: 'GIT',
   description: 'Complete final assignment for the course'
 }
 

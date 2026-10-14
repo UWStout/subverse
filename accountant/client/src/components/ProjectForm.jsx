@@ -3,12 +3,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
@@ -26,6 +28,15 @@ const PROJECT_TYPES = [
   { value: 'UNITY_ENGINE', label: 'Unity' },
   { value: 'UNREAL_ENGINE_5', label: 'Unreal Engine 5' },
   { value: 'GODOT', label: 'Godot' },
+  { value: 'OTHER', label: 'Other' }
+]
+
+/** Repository system types - mirrors the RepositoryType enum in prisma/schema.prisma. */
+const REPOSITORY_TYPES = [
+  { value: 'SUBVERSION', label: 'Subversion' },
+  { value: 'GIT', label: 'Git' },
+  { value: 'PERFORCE', label: 'Perforce' },
+  { value: 'LORE', label: 'Lore' },
   { value: 'OTHER', label: 'Other' }
 ]
 
@@ -49,8 +60,12 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
   const [type, setType] = useState('OTHER')
-  const [subversionUrl, setSubversionUrl] = useState('')
-  const [gitUrl, setGitUrl] = useState('')
+  // Create mode only: when checked the server creates the standard SVN
+  // repository and syncs accounts; when unchecked the user supplies an
+  // external repository instead (the type + URL fields appear).
+  const [createSubversionRepo, setCreateSubversionRepo] = useState(true)
+  const [repositoryType, setRepositoryType] = useState('SUBVERSION')
+  const [repositoryUrl, setRepositoryUrl] = useState('')
   const [description, setDescription] = useState('')
 
   // Option lists loaded from the API
@@ -75,15 +90,16 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
       setTitle(project.title || '')
       setSlug(project.slug || '')
       setType(project.type || 'OTHER')
-      setSubversionUrl(project.subversion_url || '')
-      setGitUrl(project.git_url || '')
+      setRepositoryType(project.repository_type ?? 'SUBVERSION')
+      setRepositoryUrl(project.repository_url || '')
       setDescription(project.description || '')
     } else {
       setTitle('')
       setSlug('')
       setType('OTHER')
-      setSubversionUrl('')
-      setGitUrl('')
+      setCreateSubversionRepo(true)
+      setRepositoryType('SUBVERSION')
+      setRepositoryUrl('')
       setDescription('')
     }
     setOfferingId('')
@@ -124,6 +140,10 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
     } else if (!SLUG_PATTERN.test(slug)) {
       errs.slug = `Invalid slug - ${SLUG_HINT}`
     }
+    // External repositories (checkbox unchecked) must record their URL
+    if (!isEdit && !createSubversionRepo && !repositoryUrl.trim()) {
+      errs.repositoryUrl = 'Repository URL is required when not creating a default Subversion repository'
+    }
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -141,16 +161,24 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
       title: title.trim(),
       slug: slug.trim(),
       type,
-      subversionUrl: subversionUrl.trim() || null,
-      gitUrl: gitUrl.trim() || null,
       description: description.trim() || null
     }
 
     try {
       if (isEdit) {
+        // Edit mode always shows the repository fields
+        payload.repositoryType = repositoryType
+        payload.repositoryUrl = repositoryUrl.trim() || null
         await updateProject(project.id, payload)
+      } else if (createSubversionRepo) {
+        // The server creates the standard SVN repo and syncs accounts
+        await createProject({ ...payload, createSubversionRepo: true })
       } else {
-        await createProject(payload)
+        // External repository - the server must NOT create an SVN repo or
+        // run account synchronization for it
+        payload.repositoryType = repositoryType
+        payload.repositoryUrl = repositoryUrl.trim()
+        await createProject({ ...payload, createSubversionRepo: false })
       }
 
       onSubmit()
@@ -242,21 +270,49 @@ export default function ProjectForm ({ open, project, onClose, onSubmit }) {
             disabled={loading}
           />
 
-          <TextField
-            label='Git URL'
-            value={gitUrl}
-            onChange={e => setGitUrl(e.target.value)}
-            fullWidth
-            disabled={loading}
-          />
+          {isEdit || !createSubversionRepo
+            ? (
+              <>
+                <FormControl fullWidth>
+                  <InputLabel id='project-repository-type-label'>Repository type</InputLabel>
+                  <Select
+                    labelId='project-repository-type-label'
+                    label='Repository type'
+                    value={repositoryType}
+                    onChange={e => setRepositoryType(e.target.value)}
+                    disabled={loading || optionsLoading}
+                  >
+                    {REPOSITORY_TYPES.map(t => (
+                      <MenuItem key={t.value} value={t.value}>
+                        {t.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
 
-          <TextField
-            label='Subversion URL'
-            value={subversionUrl}
-            onChange={e => setSubversionUrl(e.target.value)}
-            fullWidth
-            disabled={loading}
-          />
+                <TextField
+                  label='Repository URL'
+                  value={repositoryUrl}
+                  onChange={e => setRepositoryUrl(e.target.value)}
+                  error={!!errors.repositoryUrl}
+                  helperText={errors.repositoryUrl}
+                  fullWidth
+                  disabled={loading}
+                />
+              </>
+            )
+            : (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={createSubversionRepo}
+                    onChange={e => setCreateSubversionRepo(e.target.checked)}
+                    disabled={loading || optionsLoading}
+                  />
+                }
+                label='Create default Subversion repository'
+              />
+            )}
 
           <TextField
             label='Description'

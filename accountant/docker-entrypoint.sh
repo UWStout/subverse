@@ -13,6 +13,12 @@ DATA_DIR="/usr/src/app/data"
 mkdir -p "$DATA_DIR"
 chown -R node:node "$DATA_DIR"
 
+# One-time data migration for databases created with the old Project schema
+# (subversion_url / git_url -> repository_url / repository_type). It must run
+# BEFORE db push, which would drop the old columns without preserving their
+# values. Idempotent no-op on fresh or already-migrated databases.
+gosu node node scripts/migrate-repository-fields.mjs
+
 # Initialize (or upgrade) the database schema before starting the app.
 # `prisma db push` is idempotent, so this is a no-op when the schema already
 # matches. It runs unconditionally - not just when the DB file is missing - so
