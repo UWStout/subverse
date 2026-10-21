@@ -9,12 +9,13 @@ services:
       - "80:80"     # HTTP Traffic
       - "443:443"   # HTTPS Traffic
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # Listen to Docker
-      - ./traefik.yaml:/traefik.yaml:ro               # Static Config
-      - ./dynamic.yaml:/dynamic.yaml                  # Dynamic services
-      - ./certs:/certs:ro                             # Local self-signed SSL certs
-      - traefik_certs:/etc/traefik                    # Real authorized SSL Certs
-      - ./logs:/logs                                  # Folder for logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro        # Listen to Docker
+      - ./traefik.yaml:/traefik.yaml:ro                     # Static Config
+      - ./dynamic.yaml:/dynamic.yaml                        # Dynamic services
+      - ./certs:/certs:ro                                   # Local self-signed SSL certs
+      - traefik_certs:/etc/traefik                          # Real authorized SSL Certs
+      - ./logs:/logs                                        # Folder for logs
+      - ../subversion/config/subversion:/etc/subversion:ro  # Subversion access files
     environment:
       TZ: 'America/Chicago'
     env_file:

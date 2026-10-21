@@ -31,34 +31,34 @@ services:
       traefik.http.routers.svn_gateway.tls: "true"
 
   # Administrator service with PHP + 'svnadmin' (and no WEBDAV or svnserve)
-  svn_admin:
-    container_name: svn_admin
-    build:
-      context: .
-      dockerfile: Dockerfile.svn-admin
-    restart: unless-stopped
+  # svn_admin:
+  #   container_name: svn_admin
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.svn-admin
+  #   restart: unless-stopped
 
-    volumes:
-      - svn-root:/var/svn
-      - ./config/apache2-admin:/etc/apache2
-      - ./config/subversion:/etc/subversion
-      - ./config/php:/etc/php84
-      - ./config/svnadmin:/opt/svnadmin/data
+  #   volumes:
+  #     - svn-root:/var/svn
+  #     - ./config/apache2-admin:/etc/apache2
+  #     - ./config/subversion:/etc/subversion
+  #     - ./config/php:/etc/php84
+  #     - ./config/svnadmin:/opt/svnadmin/data
 
-    environment:
-      TZ: 'America/Chicago'
+  #   environment:
+  #     TZ: 'America/Chicago'
 
-    networks:
-      - traefik
+  #   networks:
+  #     - traefik
 
-    labels:
-      # Enable as a 'traefik' service and configure
-      traefik.enable: true
-      traefik.docker.network: "traefik"
+  #   labels:
+  #     # Enable as a 'traefik' service and configure
+  #     traefik.enable: true
+  #     traefik.docker.network: "traefik"
 
-      # IF.SVNAdmin service & router configuration for traefik
-      traefik.http.services.svnadmin.loadbalancer.server.port: 8080
-      traefik.http.routers.svnadmin.service: svnadmin
-      traefik.http.routers.svnadmin.rule: Host(`svnadmin.subverse`)
-      traefik.http.routers.svnadmin.entrypoints: websecure
-      traefik.http.routers.svnadmin.tls: true
+  #     # IF.SVNAdmin service & router configuration for traefik
+  #     traefik.http.services.svnadmin.loadbalancer.server.port: 8080
+  #     traefik.http.routers.svnadmin.service: svnadmin
+  #     traefik.http.routers.svnadmin.rule: Host(`svnadmin.subverse`)
+  #     traefik.http.routers.svnadmin.entrypoints: websecure
+  #     traefik.http.routers.svnadmin.tls: true
