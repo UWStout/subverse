@@ -10,7 +10,7 @@ entryPoints:
     address: ":443"
     forwardedHeaders:
       trustedIPs:
-        - "97.90.231.12"
+        - "${STATIC_IP}"
         - "172.19.0.1/24"
 
 api:
@@ -24,6 +24,11 @@ log:
 
 accessLog:
   filePath: './logs/access.log'
+  filters:
+    statusCodes:
+      - "200"
+      - "300-308"
+      - "400-599"
 
 providers:
   docker:
@@ -31,12 +36,3 @@ providers:
     exposedByDefault: false # Secure: only expose labeled containers
   file:
     filename: './dynamic.yaml'
-
-# certificatesResolvers:
-#   myresolver:
-#     acme:
-#       email: seth.berrier@gmail.com
-#       storage: /etc/traefik/acme.json
-#       dnsChallenge:
-#         provider: porkbun
-#         delayBeforeCheck: 10

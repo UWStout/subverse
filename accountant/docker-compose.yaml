@@ -20,7 +20,7 @@ services:
       # Accountant API service & router configuration for traefik
       traefik.http.services.accountant.loadbalancer.server.port: "3000"
       traefik.http.routers.accountant.service: "accountant"
-      traefik.http.routers.accountant.rule: "Host(`account.subverse`)"
+      traefik.http.routers.accountant.rule: "Host(`account.${BASE_DOMAIN}`)"
       traefik.http.routers.accountant.entrypoints: "websecure"
       traefik.http.routers.accountant.tls: "true"
 
