@@ -11,8 +11,7 @@ import {
   deleteOffering,
   createOffering,
   updateOffering,
-  fetchClasses,
-  fetchTeachers
+  fetchClasses
 } from '../src/services/api'
 
 // Mock the auth context - the page only consumes the useAuth hook.
@@ -27,26 +26,25 @@ vi.mock('../src/services/api', () => ({
   deleteOffering: vi.fn(),
   createOffering: vi.fn(),
   updateOffering: vi.fn(),
-  fetchClasses: vi.fn(),
-  fetchTeachers: vi.fn()
+  fetchClasses: vi.fn()
 }))
 
 const TEACHER = { id: 1, username: 'prof', type: 'TEACHER' }
 const STUDENT = { id: 2, username: 'student', type: 'STUDENT' }
 const ADMIN = { id: 3, username: 'admin', type: 'ADMIN' }
 
-// Plain offering row - the list API returns no joined class / teacher data.
+// Offering row as the list API returns it: plain fields plus a light
+// teachers join (no class details).
 const OFFERING_1 = {
   id: 1,
   class_id: 1,
-  teacher_id: 1,
+  teachers: [{ id: 1, username: 'prof' }],
   term: 'FALL25',
   section: '101'
 }
 
-// Reference-list rows used by the page to map class_id / teacher_id → labels.
+// Reference-list row used by the page to map class_id → labels.
 const CLASS_1 = { id: 1, subject: 'CS', number: '101', title: 'Intro CS' }
-const TEACHER_ACCOUNT = { id: 1, username: 'prof', email: 'prof@uni.edu', type: 'TEACHER' }
 
 const LIST_RESPONSE = { data: [OFFERING_1], total: 1, page: 1, limit: 25, totalPages: 1 }
 
@@ -78,7 +76,6 @@ describe('Offerings page', () => {
     createOffering.mockResolvedValue(OFFERING_1)
     updateOffering.mockResolvedValue(OFFERING_1)
     fetchClasses.mockResolvedValue({ data: [CLASS_1], total: 1, page: 1, limit: 100, totalPages: 1 })
-    fetchTeachers.mockResolvedValue({ data: [TEACHER_ACCOUNT], total: 1, page: 1, limit: 100, totalPages: 1 })
     user = await userEvent.setup()
   })
 
@@ -113,7 +110,7 @@ describe('Offerings page', () => {
     expect(await screen.findByText('No offerings found')).toBeInTheDocument()
   })
 
-  it('renders offerings with class and teacher labels mapped from the reference lists', async () => {
+  it('renders offerings with class labels and co-teacher names from the row data', async () => {
     renderPage(TEACHER)
 
     expect(await screen.findByText('Class Offerings')).toBeInTheDocument()
@@ -122,15 +119,14 @@ describe('Offerings page', () => {
     expect(within(table).getByText('CS 101')).toBeInTheDocument()
     expect(within(table).getByText('Intro CS')).toBeInTheDocument()
     expect(within(table).getByText('FALL25')).toBeInTheDocument()
+    // Teacher names come from the light teachers join on each row
     expect(within(table).getByText('prof')).toBeInTheDocument()
-    // The reference lists are fetched once on mount (small, one page of 100)
+    // The class reference list is fetched once on mount (small, one page of 100)
     expect(fetchClasses).toHaveBeenCalledWith(1, 100)
-    expect(fetchTeachers).toHaveBeenCalledWith(1, 100)
   })
 
   it('still renders the table when the reference lists fail', async () => {
     fetchClasses.mockRejectedValue(new Error('Failed to list classes'))
-    fetchTeachers.mockRejectedValue(new Error('Failed to list teachers'))
 
     renderPage(TEACHER)
 

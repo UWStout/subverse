@@ -225,7 +225,7 @@ describe('POST /user/bulk-create', () => {
 
   it('returns 403 when a teacher targets a project in an offering they do not teach', async () => {
     mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT) // offering_id: 1
-    mockPrisma.offering.findUnique.mockResolvedValue({ id: 1, teacher_id: 99 })
+    mockPrisma.offering.findUnique.mockResolvedValue({ id: 1, teachers: [{ id: 99 }] })
 
     const res = await request(app)
       .post('/user/bulk-create')
@@ -449,7 +449,7 @@ describe('POST /user/bulk-create', () => {
 
   it('allows a teacher to bulk-create for a project in their own offering', async () => {
     mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT) // offering_id: 1
-    mockPrisma.offering.findUnique.mockResolvedValue({ id: 1, teacher_id: 20 }) // TEACHER_TOKEN sub = 20
+    mockPrisma.offering.findUnique.mockResolvedValue({ id: 1, teachers: [{ id: 20 }] }) // TEACHER_TOKEN sub = 20
     mockPrisma.$queryRaw.mockResolvedValue([])
     let nextId = 100
     mockPrisma.user.create.mockImplementation(async ({ data }) => ({ id: ++nextId, ...data }))

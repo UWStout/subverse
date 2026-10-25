@@ -105,9 +105,9 @@ export default function ProjectDetailsDialog ({ open, project, onClose }) {
                 <Typography variant='body2' color='text.secondary'>
                   {offering.term}, section {offering.section}
                 </Typography>
-                {offering.teacher && (
+                {(offering.teachers ?? []).length > 0 && (
                   <Typography variant='body2' sx={{ mt: 0.5 }}>
-                    Teacher: {offering.teacher.username} ({offering.teacher.email})
+                    Teachers: {offering.teachers.map(t => `${t.username} (${t.email})`).join(', ')}
                   </Typography>
                 )}
               </Section>

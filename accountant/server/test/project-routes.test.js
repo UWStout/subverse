@@ -15,7 +15,7 @@ async function getProjectRouter () {
 }
 
 // Role tokens for exercising the permission rules (the default session is a student).
-// TEST_OFFERING belongs to teacher_id 1, so the sub-20 teacher below does NOT
+// TEST_OFFERING lists teacher id 1, so the sub-20 teacher below does NOT
 // teach it - handy for the "not their own offering" 403 cases.
 const TEACHER_TOKEN = makeToken({ sub: 20, username: 'teacher', type: 'TEACHER' })
 const ADMIN_TOKEN = makeToken({ sub: 10, username: 'admin', type: 'ADMIN' })
@@ -229,13 +229,12 @@ describe('Project API Routes', () => {
       expect(res.body.description).toBe('Complete final assignment for the course')
     })
 
-    it('returns project with nested offering, teacher and assignment info for non-students', async () => {
+    it('returns project with nested offering, teachers and assignment info for non-students', async () => {
       const projectWithOffering = {
         ...TEST_PROJECT,
         offering: {
           ...TEST_OFFERING,
-          class: TEST_CLASS,
-          teacher: { id: 1, username: 'prof', email: 'prof@uni.edu' }
+          class: TEST_CLASS
         },
         assignments: [
           { student_id: 2, project_id: 1, student: { id: 2, username: 'student1' } }
@@ -248,7 +247,7 @@ describe('Project API Routes', () => {
         .set('Authorization', `Bearer ${TEACHER_TOKEN}`)
       expect(res.status).toBe(200)
       expect(res.body.offering.class.subject).toBe('CS')
-      expect(res.body.offering.teacher.username).toBe('prof')
+      expect(res.body.offering.teachers[0].username).toBe('prof')
       expect(res.body.assignments).toHaveLength(1)
       // Non-students get the assignments include (student info is visible to them)
       expect(mockPrisma.project.findUnique.mock.calls[0][0].include).toHaveProperty('assignments')
@@ -421,7 +420,7 @@ describe('Project API Routes', () => {
     })
 
     it('lets a teacher create a project in an offering they teach', async () => {
-      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teacher_id: 20 })
+      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teachers: [{ id: 20 }] })
       mockPrisma.project.create.mockResolvedValue({ ...TEST_PROJECT, title: 'New Project' })
 
       const res = await request(app)
@@ -432,7 +431,7 @@ describe('Project API Routes', () => {
     })
 
     it('returns 403 when a teacher creates a project in an offering they do not teach', async () => {
-      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher_id 1, not sub 20
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher id 1, not sub 20
 
       const res = await request(app)
         .post('/project/create')
@@ -638,7 +637,7 @@ describe('Project API Routes', () => {
 
     it('lets a teacher update a project in an offering they teach', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
-      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teacher_id: 20 })
+      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teachers: [{ id: 20 }] })
       mockPrisma.project.update.mockResolvedValue({ ...TEST_PROJECT, title: 'Updated Title' })
 
       const res = await request(app)
@@ -650,7 +649,7 @@ describe('Project API Routes', () => {
 
     it('returns 403 when a teacher updates a project in an offering they do not teach', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
-      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher_id 1, not sub 20
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher id 1, not sub 20
 
       const res = await request(app)
         .post('/project/update/1')
@@ -665,8 +664,8 @@ describe('Project API Routes', () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
       // Current offering is theirs; the target offering is not
       mockPrisma.offering.findUnique
-        .mockResolvedValueOnce({ ...TEST_OFFERING, teacher_id: 20 })
-        .mockResolvedValue({ ...TEST_OFFERING, id: 2, teacher_id: 99 })
+        .mockResolvedValueOnce({ ...TEST_OFFERING, teachers: [{ id: 20 }] })
+        .mockResolvedValue({ ...TEST_OFFERING, id: 2, teachers: [{ id: 99 }] })
 
       const res = await request(app)
         .post('/project/update/1')
@@ -865,7 +864,7 @@ describe('Project API Routes', () => {
 
     it('lets a teacher delete a project in an offering they teach', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
-      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teacher_id: 20 })
+      mockPrisma.offering.findUnique.mockResolvedValue({ ...TEST_OFFERING, teachers: [{ id: 20 }] })
       mockPrisma.assignment.deleteMany.mockResolvedValue({ count: 1 })
       mockPrisma.project.delete.mockResolvedValue(TEST_PROJECT)
 
@@ -878,7 +877,7 @@ describe('Project API Routes', () => {
 
     it('returns 403 when a teacher deletes a project in an offering they do not teach', async () => {
       mockPrisma.project.findUnique.mockResolvedValue(TEST_PROJECT)
-      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher_id 1, not sub 20
+      mockPrisma.offering.findUnique.mockResolvedValue(TEST_OFFERING) // teacher id 1, not sub 20
 
       const res = await request(app)
         .delete('/project/1')

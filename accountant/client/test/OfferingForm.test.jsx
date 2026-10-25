@@ -32,11 +32,10 @@ const TEACHERS = [
 const OFFERING_1 = {
   id: 1,
   class_id: 1,
-  teacher_id: 1,
   term: 'FALL25',
   section: '101',
   class: CLASSES[0],
-  teacher: TEACHERS[0]
+  teachers: [TEACHERS[0]]
 }
 
 function renderForm ({ open = true, offering = null } = {}) {
@@ -65,6 +64,12 @@ async function waitOptionsLoaded () {
  */
 async function selectOption (label, optionName) {
   await user.click(screen.getByLabelText(label))
+  await user.click(await screen.findByRole('option', { name: optionName }))
+}
+
+/** Open the teachers Autocomplete and click the matching option. */
+async function pickTeacher (optionName) {
+  await user.click(screen.getByLabelText('Teachers'))
   await user.click(await screen.findByRole('option', { name: optionName }))
 }
 
@@ -99,8 +104,8 @@ describe('OfferingForm', () => {
     expect(screen.getByRole('option', { name: 'MATH 201 – Calculus I' })).toBeInTheDocument()
     await user.keyboard('{Escape}')
 
-    // Open the teacher listbox and check its options
-    await user.click(screen.getByLabelText('Teacher'))
+    // Open the teachers combobox and check its options
+    await user.click(screen.getByLabelText('Teachers'))
     expect(await screen.findByRole('option', { name: 'prof' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'taylor' })).toBeInTheDocument()
     await user.keyboard('{Escape}')
@@ -117,7 +122,7 @@ describe('OfferingForm', () => {
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(await screen.findByText('Class is required')).toBeInTheDocument()
-    expect(screen.getByText('Teacher is required')).toBeInTheDocument()
+    expect(screen.getByText('At least one teacher is required')).toBeInTheDocument()
     expect(screen.getByText('Term is required')).toBeInTheDocument()
     expect(screen.getByText('Section is required')).toBeInTheDocument()
     expect(createOffering).not.toHaveBeenCalled()
@@ -136,7 +141,7 @@ describe('OfferingForm', () => {
     await waitOptionsLoaded()
 
     await selectOption('Class', 'CS 101 – Intro CS')
-    await selectOption('Teacher', 'prof')
+    await pickTeacher('prof')
     await user.type(screen.getByLabelText('Term'), 'FALL2025')
     await user.type(screen.getByLabelText('Section'), 'A')
 
@@ -155,7 +160,7 @@ describe('OfferingForm', () => {
     await user.type(screen.getByLabelText('Subject'), 'cs')
     await user.type(screen.getByLabelText('Number'), '11')
     await user.type(screen.getByLabelText('Title'), 'Bad Class')
-    await selectOption('Teacher', 'prof')
+    await pickTeacher('prof')
     await user.type(screen.getByLabelText('Term'), 'FALL25')
     await user.type(screen.getByLabelText('Section'), '101')
 
@@ -172,7 +177,7 @@ describe('OfferingForm', () => {
     await waitOptionsLoaded()
 
     await selectOption('Class', 'CS 101 – Intro CS')
-    await selectOption('Teacher', 'prof')
+    await pickTeacher('prof')
     await user.type(screen.getByLabelText('Term'), 'FALL25')
     await user.type(screen.getByLabelText('Section'), '101')
 
@@ -180,11 +185,36 @@ describe('OfferingForm', () => {
 
     expect(createOffering).toHaveBeenCalledWith({
       classId: 1,
-      teacherId: 1,
+      teacherIds: [1],
       term: 'FALL25',
       section: '101'
     })
     // Success notifies the page and closes the dialog
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('supports co-taught offerings with multiple teachers', async () => {
+    const { onClose, onSubmit } = renderForm({ open: true })
+    await waitOptionsLoaded()
+
+    await selectOption('Class', 'CS 101 – Intro CS')
+    // Pick both teachers - the multi-select keeps the first pick as a tag.
+    // (No Escape here: it would also close the dialog around the form.)
+    await pickTeacher('prof')
+    await user.click(screen.getByLabelText('Teachers'))
+    await user.click(await screen.findByRole('option', { name: 'taylor' }))
+    await user.type(screen.getByLabelText('Term'), 'FALL25')
+    await user.type(screen.getByLabelText('Section'), '101')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(createOffering).toHaveBeenCalledWith({
+      classId: 1,
+      teacherIds: [1, 5],
+      term: 'FALL25',
+      section: '101'
+    })
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -218,7 +248,7 @@ describe('OfferingForm', () => {
     await user.type(screen.getByLabelText('Subject'), 'PHYS')
     await user.type(screen.getByLabelText('Number'), '150')
     await user.type(screen.getByLabelText('Title'), 'Physics I')
-    await selectOption('Teacher', 'prof')
+    await pickTeacher('prof')
     await user.type(screen.getByLabelText('Term'), 'FALL25')
     await user.type(screen.getByLabelText('Section'), '101')
 
@@ -228,7 +258,7 @@ describe('OfferingForm', () => {
     // The offering references the id of the class that was just created
     expect(createOffering).toHaveBeenCalledWith({
       classId: 10,
-      teacherId: 1,
+      teacherIds: [1],
       term: 'FALL25',
       section: '101'
     })
@@ -241,7 +271,7 @@ describe('OfferingForm', () => {
     await waitOptionsLoaded()
 
     await selectOption('Class', 'New Class')
-    await selectOption('Teacher', 'prof')
+    await pickTeacher('prof')
     await user.type(screen.getByLabelText('Term'), 'FALL25')
     await user.type(screen.getByLabelText('Section'), '101')
 
@@ -266,9 +296,10 @@ describe('OfferingForm', () => {
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
     expect(createClass).toHaveBeenCalledWith({ subject: 'PHYS', number: '150', title: 'Physics I' })
+    // The prefilled (unchanged) co-teacher list is sent back with the update
     expect(updateOffering).toHaveBeenCalledWith(1, {
       classId: 10,
-      teacherId: 1,
+      teacherIds: [1],
       term: 'FALL25',
       section: '101'
     })
@@ -283,7 +314,7 @@ describe('OfferingForm', () => {
     await waitOptionsLoaded()
 
     await selectOption('Class', 'CS 101 – Intro CS')
-    await selectOption('Teacher', 'prof')
+    await pickTeacher('prof')
     await user.type(screen.getByLabelText('Term'), 'FALL25')
     await user.type(screen.getByLabelText('Section'), '101')
 
@@ -303,6 +334,7 @@ describe('OfferingForm', () => {
     expect(screen.getByLabelText('Section')).toHaveValue('101')
     // The selects show their chosen values once the options have loaded
     expect(await screen.findByText('CS 101 – Intro CS')).toBeInTheDocument()
+    // The co-teacher appears as a tag in the multi-select
     expect(screen.getByText('prof')).toBeInTheDocument()
   })
 
@@ -317,7 +349,7 @@ describe('OfferingForm', () => {
 
     expect(updateOffering).toHaveBeenCalledWith(1, {
       classId: 1,
-      teacherId: 1,
+      teacherIds: [1],
       term: 'FALL25',
       section: '102'
     })

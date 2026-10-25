@@ -85,8 +85,10 @@ export default function OfferingDetailsDialog ({ open, offering, onClose }) {
             </Field>
             <Field label='Term'>{data.term}</Field>
             <Field label='Section'>{data.section}</Field>
-            <Field label='Teacher'>
-              {data.teacher ? `${data.teacher.username} (${data.teacher.email})` : '—'}
+            <Field label='Teachers'>
+              {(data.teachers ?? []).length
+                ? data.teachers.map(t => `${t.username} (${t.email})`).join(', ')
+                : '—'}
             </Field>
 
             <Section title={`Projects (${projects.length})`}>

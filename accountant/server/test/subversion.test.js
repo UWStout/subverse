@@ -117,12 +117,12 @@ describe('buildAccessControlFile', () => {
         { student: { username: 'lellison' } },
         { student: { username: 'rfoster' } }
       ],
-      offering: { teacher: { username: 'lito' } }
+      offering: { teachers: [{ username: 'lito' }] }
     },
     {
       slug: 'group-work',
       assignments: [{ student: { username: 'nibarra' } }],
-      offering: { teacher: { username: 'sberrier' } }
+      offering: { teachers: [{ username: 'sberrier' }] }
     }
   ]
 
@@ -162,7 +162,7 @@ describe('buildAccessControlFile', () => {
 
   it('omits groups and sections for projects with no members', () => {
     const content = subversion.buildAccessControlFile([
-      { slug: 'empty-proj', assignments: [], offering: { teacher: null } },
+      { slug: 'empty-proj', assignments: [], offering: { teachers: [] } },
       ...projects
     ])
     expect(content).not.toContain('empty-proj')
@@ -177,7 +177,7 @@ describe('buildAccessControlFile', () => {
           { student: { username: 'bad,name' } },
           { student: { username: 'good_name' } }
         ],
-        offering: { teacher: { username: 'lito' } }
+        offering: { teachers: [{ username: 'lito' }] }
       }
     ])
     expect(content).toContain('odd-names = good_name, lito')
@@ -189,10 +189,21 @@ describe('buildAccessControlFile', () => {
       {
         slug: 'self-taught',
         assignments: [{ student: { username: 'lito' } }],
-        offering: { teacher: { username: 'lito' } }
+        offering: { teachers: [{ username: 'lito' }] }
       }
     ])
     expect(content).toContain('self-taught = lito')
+  })
+
+  it('includes every co-teacher in the project group', () => {
+    const content = subversion.buildAccessControlFile([
+      {
+        slug: 'co-taught',
+        assignments: [{ student: { username: 'lellison' } }],
+        offering: { teachers: [{ username: 'lito' }, { username: 'sberrier' }] }
+      }
+    ])
+    expect(content).toContain('co-taught = lellison, lito, sberrier')
   })
 })
 
@@ -482,12 +493,12 @@ describe('synchronizeRepositoryAccess', () => {
     {
       slug: 'final-project',
       assignments: [{ student: { username: 'lellison' } }],
-      offering: { teacher: { username: 'lito' } }
+      offering: { teachers: [{ username: 'lito' }] }
     },
     {
       slug: 'other-proj',
       assignments: [],
-      offering: { teacher: { username: 'sberrier' } }
+      offering: { teachers: [{ username: 'sberrier' }] }
     }
   ]
 

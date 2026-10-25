@@ -172,8 +172,8 @@ export function parsePasswdUsernames (content) {
  *
  * Layout:
  *   - an `admins` group containing every ADMIN-type user;
- *   - one [groups] entry per project: every assigned student plus the
- *     offering's teacher, named after the project slug;
+ *   - one [groups] entry per project: every assigned student plus all of
+ *     the offering's (co-)teachers, named after the project slug;
  *   - a global `[/]` section granting the admins group full r/w on every
  *     repository. There is deliberately no blanket read default: only users
  *     explicitly granted access (admins or one of their project groups) can
@@ -181,7 +181,8 @@ export function parsePasswdUsernames (content) {
  *   - one `[/<slug>]` section granting the project group full r/w on its repo.
  *
  * @param {Object[]} projects Rows shaped like the Prisma Project model with
- *   `assignments[].student.username` and `offering.teacher.username` populated.
+ *   `assignments[].student.username` and `offering.teachers[].username`
+ *   populated.
  * @param {string[]} [adminUsernames] Usernames of all ADMIN-type users.
  * @returns {string}
  */
@@ -204,8 +205,9 @@ export function buildAccessControlFile (projects, adminUsernames = []) {
       const username = assignment?.student?.username
       if (username && AUTHZ_SAFE_USERNAME.test(username)) members.add(username)
     }
-    const teacher = project.offering?.teacher?.username
-    if (teacher && AUTHZ_SAFE_USERNAME.test(teacher)) members.add(teacher)
+    for (const teacher of project.offering?.teachers ?? []) {
+      if (teacher?.username && AUTHZ_SAFE_USERNAME.test(teacher.username)) members.add(teacher.username)
+    }
 
     // No members -> no group; the repo is only reachable by admins until
     // someone is assigned.
@@ -429,7 +431,7 @@ export async function deleteRepository (slug) {
 /** Project rows with the relations the authz builder needs. */
 const ACCESS_INCLUDE = {
   assignments: { include: { student: { select: { username: true } } } },
-  offering: { include: { teacher: { select: { username: true } } } }
+  offering: { include: { teachers: { select: { username: true } } } }
 }
 
 /**
@@ -467,8 +469,8 @@ export async function synchronizeRepositoryAccess (projectInfo) {
   }
 
   // Rebuild the authz file from the full database state: a group per project
-  // (assigned students + teacher) with r/w on its repo, plus the admins group
-  // holding universal r/w.
+  // (assigned students + all co-teachers) with r/w on its repo, plus the
+  // admins group holding universal r/w.
   const db = getDatabase()
   const [projects, adminUsers] = await Promise.all([
     db.project.findMany({ include: ACCESS_INCLUDE }),
@@ -487,7 +489,9 @@ export async function synchronizeRepositoryAccess (projectInfo) {
   for (const assignment of fresh.assignments ?? []) {
     if (assignment?.student?.username) members.add(assignment.student.username)
   }
-  if (fresh.offering?.teacher?.username) members.add(fresh.offering.teacher.username)
+  for (const teacher of fresh.offering?.teachers ?? []) {
+    if (teacher?.username) members.add(teacher.username)
+  }
 
   const accounts = members.size > 0
     ? await db.user.findMany({

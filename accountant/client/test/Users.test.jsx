@@ -223,15 +223,15 @@ describe('Users page', () => {
     await user.click(screen.getByRole('button', { name: 'Add User' }))
     await screen.findByText('Create User')
 
+    // The form defaults to "email a link to set their own password", so no
+    // Password field is present and none is sent
     await user.type(screen.getByLabelText('Username'), 'newuser')
     await user.type(screen.getByLabelText('Email'), 'n@uni.edu')
-    await user.type(screen.getByLabelText('Password'), 'secret123')
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(createUser).toHaveBeenCalledWith({
       username: 'newuser',
       email: 'n@uni.edu',
-      password: 'secret123',
       type: 'STUDENT',
       firstName: '',
       lastName: ''

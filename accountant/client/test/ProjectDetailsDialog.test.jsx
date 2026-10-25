@@ -23,7 +23,10 @@ const FULL_PROJECT = {
     term: 'FALL25',
     section: '101',
     class: { id: 1, subject: 'CS', number: '458', title: 'Software Engineering Practicum' },
-    teacher: { id: 2, username: 'lito', email: 'lito@uni.edu' }
+    teachers: [
+      { id: 2, username: 'lito', email: 'lito@uni.edu' },
+      { id: 4, username: 'sberrier', email: 'sberrier@uni.edu' }
+    ]
   },
   assignments: [
     { student_id: 3, project_id: 10, student: { id: 3, username: 'lellison', email: 'lellison@university.edu' } },
@@ -68,13 +71,13 @@ describe('ProjectDetailsDialog', () => {
     expect(screen.getByText('https://svn.university.edu/courses/CS458/fall25/101/devops-dashboard-fall25-101')).toBeInTheDocument()
   })
 
-  it('shows the offering with class, term, section and teacher', async () => {
+  it('shows the offering with class, term, section and co-teachers', async () => {
     renderDialog()
 
     expect(await screen.findByText('Offering')).toBeInTheDocument()
     expect(screen.getByText('CS 458 – Software Engineering Practicum')).toBeInTheDocument()
     expect(screen.getByText('FALL25, section 101')).toBeInTheDocument()
-    expect(screen.getByText('Teacher: lito (lito@uni.edu)')).toBeInTheDocument()
+    expect(screen.getByText('Teachers: lito (lito@uni.edu), sberrier (sberrier@uni.edu)')).toBeInTheDocument()
   })
 
   it('lists the assigned students for teachers and admins', async () => {

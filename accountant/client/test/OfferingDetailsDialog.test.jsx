@@ -14,11 +14,13 @@ const OFFERING = { id: 1 }
 const FULL_OFFERING = {
   id: 1,
   class_id: 1,
-  teacher_id: 2,
   term: 'FALL25',
   section: '101',
   class: { id: 1, subject: 'CS', number: '458', title: 'Software Engineering Practicum' },
-  teacher: { id: 2, username: 'lito', email: 'lito@uni.edu' },
+  teachers: [
+    { id: 2, username: 'lito', email: 'lito@uni.edu' },
+    { id: 3, username: 'sberrier', email: 'sberrier@uni.edu' }
+  ],
   projects: [
     {
       id: 10,
@@ -62,7 +64,7 @@ describe('OfferingDetailsDialog', () => {
     expect(fetchOffering).not.toHaveBeenCalled()
   })
 
-  it('fetches by id and shows the class, term, section and teacher', async () => {
+  it('fetches by id and shows the class, term, section and co-teachers', async () => {
     renderDialog()
 
     expect(await screen.findByText('Offering Details')).toBeInTheDocument()
@@ -70,7 +72,7 @@ describe('OfferingDetailsDialog', () => {
     expect(screen.getByText('CS 458 – Software Engineering Practicum')).toBeInTheDocument()
     expect(screen.getByText('FALL25')).toBeInTheDocument()
     expect(screen.getByText('101')).toBeInTheDocument()
-    expect(screen.getByText('lito (lito@uni.edu)')).toBeInTheDocument()
+    expect(screen.getByText('lito (lito@uni.edu), sberrier (sberrier@uni.edu)')).toBeInTheDocument()
   })
 
   it('lists all projects in the offering with their repo URLs', async () => {

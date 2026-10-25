@@ -66,7 +66,6 @@ describe('UserForm', () => {
 
     expect(await screen.findByText('Username is required')).toBeInTheDocument()
     expect(screen.getByText('Email is required')).toBeInTheDocument()
-    expect(screen.getByText('Password is required')).toBeInTheDocument()
     expect(checkAvailability).not.toHaveBeenCalled()
     expect(createUser).not.toHaveBeenCalled()
   })
@@ -76,7 +75,6 @@ describe('UserForm', () => {
 
     await user.type(screen.getByLabelText('Username'), 'newuser')
     await user.type(screen.getByLabelText('Email'), 'not-an-email')
-    await user.type(screen.getByLabelText('Password'), 'secret123')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
@@ -91,7 +89,6 @@ describe('UserForm', () => {
 
     await user.type(screen.getByLabelText('Username'), 'taken')
     await user.type(screen.getByLabelText('Email'), 'taken@uni.edu')
-    await user.type(screen.getByLabelText('Password'), 'secret123')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
@@ -100,22 +97,26 @@ describe('UserForm', () => {
     expect(createUser).not.toHaveBeenCalled()
   })
 
-  it('creates a user with the entered values', async () => {
+  it('creates a user without a password by default (set-password link)', async () => {
     const { onClose, onSubmit } = renderForm({ open: true })
+
+    // The "email a link" checkbox is checked by default, so the Password
+    // field is not shown
+    expect(screen.getByLabelText('Email user a link to set their own password')).toBeChecked()
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
 
     await user.type(screen.getByLabelText('Username'), 'newuser')
     await user.type(screen.getByLabelText('First Name'), 'New')
     await user.type(screen.getByLabelText('Last Name'), 'User')
     await user.type(screen.getByLabelText('Email'), 'n@uni.edu')
-    await user.type(screen.getByLabelText('Password'), 'secret123')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(checkAvailability).toHaveBeenCalledWith('newuser', 'n@uni.edu')
+    // No password in the payload - the server takes its no-password path
     expect(createUser).toHaveBeenCalledWith({
       username: 'newuser',
       email: 'n@uni.edu',
-      password: 'secret123',
       type: 'STUDENT',
       firstName: 'New',
       lastName: 'User'
@@ -125,12 +126,34 @@ describe('UserForm', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('sends an explicit password when the email-link option is unchecked', async () => {
+    renderForm({ open: true })
+
+    await user.click(screen.getByLabelText('Email user a link to set their own password'))
+    // Unchecking reveals the Password field
+    expect(await screen.findByLabelText('Password')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Username'), 'newuser')
+    await user.type(screen.getByLabelText('Email'), 'n@uni.edu')
+    await user.type(screen.getByLabelText('Password'), 'secret123')
+
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(createUser).toHaveBeenCalledWith({
+      username: 'newuser',
+      email: 'n@uni.edu',
+      password: 'secret123',
+      type: 'STUDENT',
+      firstName: '',
+      lastName: ''
+    })
+  })
+
   it('creates a user with a changed account type', async () => {
     renderForm({ open: true })
 
     await user.type(screen.getByLabelText('Username'), 'newadmin')
     await user.type(screen.getByLabelText('Email'), 'a@uni.edu')
-    await user.type(screen.getByLabelText('Password'), 'secret123')
 
     // Change the type from the default STUDENT to ADMIN
     await user.click(screen.getByLabelText('Type'))
@@ -141,7 +164,6 @@ describe('UserForm', () => {
     expect(createUser).toHaveBeenCalledWith({
       username: 'newadmin',
       email: 'a@uni.edu',
-      password: 'secret123',
       type: 'ADMIN',
       firstName: '',
       lastName: ''
@@ -155,7 +177,6 @@ describe('UserForm', () => {
 
     await user.type(screen.getByLabelText('Username'), 'newuser')
     await user.type(screen.getByLabelText('Email'), 'n@uni.edu')
-    await user.type(screen.getByLabelText('Password'), 'secret123')
 
     await user.click(screen.getByRole('button', { name: 'Create' }))
 

@@ -19,6 +19,12 @@ chown -R node:node "$DATA_DIR"
 # values. Idempotent no-op on fresh or already-migrated databases.
 gosu node node scripts/migrate-repository-fields.mjs
 
+# One-time data migration for co-taught offerings (single teacher_id column
+# -> _TeacherOfferings join table). Same reasoning as above: it must run
+# BEFORE db push, which would drop the old column without preserving its
+# value. Idempotent no-op on fresh or already-migrated databases.
+gosu node node scripts/migrate-multi-teacher.mjs
+
 # Initialize (or upgrade) the database schema before starting the app.
 # `prisma db push` is idempotent, so this is a no-op when the schema already
 # matches. It runs unconditionally - not just when the DB file is missing - so

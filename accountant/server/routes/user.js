@@ -10,10 +10,10 @@ import { deliverSetPasswordEmail } from '../password-reset.js'
 import { setUserPassword, removeUser, synchronizeRepositoryAccess, bestEffortSvn } from '../subversion.js'
 
 // Fetch a project with the relations the SVN sync helpers need
-// (assigned students + offering teacher usernames).
+// (assigned students + all offering (co-)teacher usernames).
 const SVN_SYNC_INCLUDE = {
   assignments: { include: { student: { select: { username: true } } } },
-  offering: { include: { teacher: { select: { username: true } } } }
+  offering: { include: { teachers: { select: { username: true } } } }
 }
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
@@ -221,12 +221,13 @@ userRouter.get('/:id', async (req, res) => {
 // Route to create a new user
 userRouter.post('/create', async (req, res) => {
   try {
-    // Read out required fields
+    // Read out required fields (password is optional - accounts without one
+    // get an emailed link to set their first password, like bulk-created)
     const { username, email, password, type, first_name, last_name } = req.body
 
     // Validate required fields
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Missing required fields: username, email, password' })
+    if (!username || !email) {
+      return res.status(400).json({ error: 'Missing required fields: username and email are required' })
     }
 
     // Role-based creation rules:
@@ -248,34 +249,61 @@ userRouter.post('/create', async (req, res) => {
       return res.status(409).json({ error: 'User info conflict', conflicts })
     }
 
-    // Hash the password
-    const passwordHash = await bcrypt.hash(password, 10)
+    let user
+    if (typeof password === 'string' && password.length > 0) {
+      // Hash the supplied password. New accounts are provisional until their
+      // email is verified: mint a token and record the send time in the same
+      // write.
+      const passwordHash = await bcrypt.hash(password, 10)
+      const verificationToken = generateVerificationToken()
 
-    // New accounts are provisional until their email is verified: mint a token
-    // and record the send time in the same write.
-    const verificationToken = generateVerificationToken()
+      user = await getDb().user.create({
+        data: {
+          username,
+          email,
+          password_hash: passwordHash,
+          type: userType,
+          first_name: first_name ?? null,
+          last_name: last_name ?? null,
+          verification_token: verificationToken,
+          verification_sent_at: new Date()
+        }
+      })
 
-    // Create the user
-    const user = await getDb().user.create({
-      data: {
-        username,
-        email,
-        password_hash: passwordHash,
-        type: userType,
-        first_name: first_name ?? null,
-        last_name: last_name ?? null,
-        verification_token: verificationToken,
-        verification_sent_at: new Date()
-      }
-    })
+      // Best-effort: the account stays provisional (locked out) if delivery fails.
+      await deliverVerificationEmail(user, verificationToken)
 
-    // Best-effort: the account stays provisional (locked out) if delivery fails.
-    await deliverVerificationEmail(user, verificationToken)
+      // Sync the new credentials into the SVN passwd file (same bcrypt hash as
+      // the database row written above) so the account can authenticate against
+      // the gateway as soon as it exists.
+      await bestEffortSvn(`create user '${user.username}'`, () => setUserPassword(user.username, passwordHash))
+    } else {
+      // No password supplied: create the account with an unguessable
+      // placeholder hash and a reset token, then email a set-password link -
+      // the same path as bulk-created accounts. The account is NOT
+      // provisional; setting the first password via the emailed link is all
+      // that is required. (The SVN passwd entry is added later, when the user
+      // sets that password through /auth/reset-password.)
+      const resetToken = generateVerificationToken()
+      const placeholderHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10)
 
-    // Sync the new credentials into the SVN passwd file (same bcrypt hash as
-    // the database row written above) so the account can authenticate against
-    // the gateway as soon as it exists.
-    await bestEffortSvn(`create user '${user.username}'`, () => setUserPassword(user.username, passwordHash))
+      user = await getDb().user.create({
+        data: {
+          username,
+          email,
+          password_hash: placeholderHash,
+          type: userType,
+          first_name: first_name ?? null,
+          last_name: last_name ?? null,
+          reset_token: resetToken,
+          reset_sent_at: new Date()
+        }
+      })
+
+      // Best-effort: a failed send leaves the token in place, so the account
+      // can recover through the normal forgot-password flow.
+      await deliverSetPasswordEmail(user, resetToken)
+    }
 
     // Return the newly created user (with sensitive info removed)
     res.status(201).json({ user: sanitizeUser(user) })
@@ -315,8 +343,11 @@ userRouter.post('/bulk-create', async (req, res) => {
 
     // Teachers may only bulk-create for projects in offerings they teach
     if (req.user.type === 'TEACHER') {
-      const offering = await getDb().offering.findUnique({ where: { id: project.offering_id } })
-      if (!offering || offering.teacher_id !== req.user.sub) {
+      const offering = await getDb().offering.findUnique({
+        where: { id: project.offering_id },
+        include: { teachers: { select: { id: true } } }
+      })
+      if (!offering || !offering.teachers.some(t => t.id === req.user.sub)) {
         return res.status(403).json({ error: 'Teachers can only add users to projects in classes they teach' })
       }
     }

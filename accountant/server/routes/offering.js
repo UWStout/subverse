@@ -39,13 +39,14 @@ function parsePagination (query, maxLimit = 100) {
 /**
  * Build a Prisma `where` clause from the list route's positional filter
  * params (:term, :class_id, :teacher_id). A value of '*' means "any"
- * (no filter) for that position.
+ * (no filter) for that position. The teacher position filters offerings
+ * that list the given user as ONE of their (possibly several) teachers.
  */
 function buildWhere (params) {
   const where = {}
   if (params.term && params.term !== '*') where.term = params.term
   if (params.class_id && params.class_id !== '*') where.class_id = parseInt(params.class_id, 10)
-  if (params.teacher_id && params.teacher_id !== '*') where.teacher_id = parseInt(params.teacher_id, 10)
+  if (params.teacher_id && params.teacher_id !== '*') where.teachers = { some: { id: parseInt(params.teacher_id, 10) } }
   return where
 }
 
@@ -70,14 +71,16 @@ offeringRouter.get('/list/:term/:class_id/:teacher_id', async (req, res) => {
     const where = buildWhere(req.params)
     const { skip, take, page } = parsePagination(req.query)
 
-    // Plain rows only - no joins / expansions. Expanded info (class and
-    // teacher details, project IDs) lives on GET /offering/:id.
+    // Rows carry a light teachers join (id + username) so the list table can
+    // show co-teachers without a second request; the full expansion (class
+    // details, emails, project IDs) lives on GET /offering/:id.
     const [offerings, agg] = await Promise.all([
       getDb().offering.findMany({
         where,
         skip,
         take,
-        orderBy: [{ term: 'asc' }, { section: 'asc' }, { id: 'asc' }]
+        orderBy: [{ term: 'asc' }, { section: 'asc' }, { id: 'asc' }],
+        include: { teachers: { select: { id: true, username: true }, orderBy: { id: 'asc' } } }
       }),
       getDb().offering.aggregate({ where, _count: { _all: true } })
     ])
@@ -125,7 +128,7 @@ offeringRouter.get('/:id', async (req, res) => {
       where: { id },
       include: {
         class: { select: { id: true, subject: true, number: true, title: true } },
-        teacher: { select: { id: true, username: true, email: true } },
+        teachers: { select: { id: true, username: true, email: true }, orderBy: { id: 'asc' } },
         projects: {
           select: { id: true, title: true, slug: true, repository_url: true, repository_type: true },
           orderBy: { id: 'asc' }
@@ -148,26 +151,28 @@ offeringRouter.get('/:id', async (req, res) => {
 })
 
 /**
- * Validate that a class and instructor exist (instructors may be TEACHER or
- * ADMIN). Returns the found records or null when either lookup fails.
+ * Validate a class and a list of instructor IDs. Instructors may be TEACHER
+ * or ADMIN. Returns { cls, teachers } or null when any lookup fails.
  */
-async function validateClassAndTeacher (class_id, teacher_id) {
-  const [cls, teacher] = await Promise.all([
+async function validateClassAndTeachers (class_id, teacher_ids) {
+  const [cls, teachers] = await Promise.all([
     getDb().class.findUnique({ where: { id: class_id } }),
-    getDb().user.findUnique({ where: { id: teacher_id } })
+    getDb().user.findMany({ where: { id: { in: teacher_ids } } })
   ])
-  if (!cls || !teacher || !['TEACHER', 'ADMIN'].includes(teacher.type)) return null
-  return { cls, teacher }
+  if (!cls || teachers.length !== new Set(teacher_ids).size) return null
+  if (teachers.some(t => !['TEACHER', 'ADMIN'].includes(t.type))) return null
+  return { cls, teachers }
 }
 
-// Create a new offering for a class / teacher / term / section combination
+// Create a new offering for a class / term / section combination with one or
+// more co-teachers (teacher_ids: non-empty array of user IDs)
 offeringRouter.post('/create', async (req, res) => {
   try {
-    const { class_id, teacher_id, term, section } = req.body
+    const { class_id, teacher_ids, term, section } = req.body
 
     // Validate required fields
-    if (!class_id || !teacher_id || !term || !section) {
-      return res.status(400).json({ error: 'Missing required fields: class_id, teacher_id, term, section' })
+    if (!class_id || !Array.isArray(teacher_ids) || teacher_ids.length === 0 || !term || !section) {
+      return res.status(400).json({ error: 'Missing required fields: class_id, teacher_ids (non-empty array), term, section' })
     }
 
     // Validate field patterns (rules live in config/validation-rules.js)
@@ -181,18 +186,18 @@ offeringRouter.post('/create', async (req, res) => {
     }
 
     const clsId = parseInt(class_id, 10)
-    const teacherId = parseInt(teacher_id, 10)
-    if (isNaN(clsId) || isNaN(teacherId)) {
-      return res.status(400).json({ error: 'class_id and teacher_id must be numeric' })
+    const teacherIds = teacher_ids.map(t => parseInt(t, 10))
+    if (isNaN(clsId) || teacherIds.some(isNaN)) {
+      return res.status(400).json({ error: 'class_id and teacher_ids must be numeric' })
     }
 
-    // Verify the referenced class and teacher exist
-    const validated = await validateClassAndTeacher(clsId, teacherId)
+    // Verify the referenced class and all teachers exist and are eligible
+    const validated = await validateClassAndTeachers(clsId, [...new Set(teacherIds)])
     if (!validated) {
       const cls = await getDb().class.findUnique({ where: { id: clsId } })
       if (!cls) return res.status(404).json({ error: 'Class not found' })
-      const teacher = await getDb().user.findUnique({ where: { id: teacherId } })
-      if (!teacher) return res.status(404).json({ error: 'Teacher not found' })
+      const teachers = await getDb().user.findMany({ where: { id: { in: teacherIds } } })
+      if (teachers.length !== new Set(teacherIds).size) return res.status(404).json({ error: 'Teacher not found' })
       return res.status(400).json({ error: 'Selected user is not a teacher or admin' })
     }
 
@@ -205,7 +210,12 @@ offeringRouter.post('/create', async (req, res) => {
     }
 
     const offering = await getDb().offering.create({
-      data: { class_id: clsId, teacher_id: teacherId, term, section }
+      data: {
+        class_id: clsId,
+        term,
+        section,
+        teachers: { connect: [...new Set(teacherIds)].map(id => ({ id })) }
+      }
     })
 
     res.status(201).json(offering)
@@ -215,7 +225,8 @@ offeringRouter.post('/create', async (req, res) => {
   }
 })
 
-// Update an existing offering (any subset of class_id, teacher_id, term, section)
+// Update an existing offering (any subset of class_id, teacher_ids, term,
+// section). teacher_ids REPLACES the full co-teacher list when provided.
 offeringRouter.post('/update/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10)
@@ -223,10 +234,10 @@ offeringRouter.post('/update/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid offering ID' })
     }
 
-    const { class_id, teacher_id, term, section } = req.body
+    const { class_id, teacher_ids, term, section } = req.body
 
     // Validate that at least one field is provided
-    if (class_id === undefined && teacher_id === undefined && term === undefined && section === undefined) {
+    if (class_id === undefined && teacher_ids === undefined && term === undefined && section === undefined) {
       return res.status(400).json({ error: 'No update fields provided' })
     }
 
@@ -245,19 +256,29 @@ offeringRouter.post('/update/:id', async (req, res) => {
 
     // Resolve final values (new value when provided, otherwise current)
     const newClassId = class_id !== undefined ? parseInt(class_id, 10) : existing.class_id
-    const newTeacherId = teacher_id !== undefined ? parseInt(teacher_id, 10) : existing.teacher_id
-    if (isNaN(newClassId) || isNaN(newTeacherId)) {
-      return res.status(400).json({ error: 'class_id and teacher_id must be numeric' })
+    if (isNaN(newClassId)) {
+      return res.status(400).json({ error: 'class_id must be numeric' })
+    }
+    let newTeacherIds
+    if (teacher_ids !== undefined) {
+      if (!Array.isArray(teacher_ids) || teacher_ids.length === 0) {
+        return res.status(400).json({ error: 'teacher_ids must be a non-empty array of user IDs' })
+      }
+      newTeacherIds = [...new Set(teacher_ids.map(t => parseInt(t, 10)))]
+      if (newTeacherIds.some(isNaN)) {
+        return res.status(400).json({ error: 'teacher_ids must contain only numeric user IDs' })
+      }
     }
 
-    // Validate referenced class / teacher when either is being changed
-    if (class_id !== undefined || teacher_id !== undefined) {
-      const validated = await validateClassAndTeacher(newClassId, newTeacherId)
+    // Validate referenced class / teachers when either is being changed
+    if (class_id !== undefined || teacher_ids !== undefined) {
+      const currentTeacherIds = newTeacherIds ?? (await getDb().offering.findUnique({ where: { id }, include: { teachers: { select: { id: true } } } })).teachers.map(t => t.id)
+      const validated = await validateClassAndTeachers(newClassId, currentTeacherIds)
       if (!validated) {
         const cls = await getDb().class.findUnique({ where: { id: newClassId } })
         if (!cls) return res.status(404).json({ error: 'Class not found' })
-        const teacher = await getDb().user.findUnique({ where: { id: newTeacherId } })
-        if (!teacher) return res.status(404).json({ error: 'Teacher not found' })
+        const teachers = await getDb().user.findMany({ where: { id: { in: currentTeacherIds } } })
+        if (teachers.length !== new Set(currentTeacherIds).size) return res.status(404).json({ error: 'Teacher not found' })
         return res.status(400).json({ error: 'Selected user is not a teacher or admin' })
       }
     }
@@ -279,7 +300,8 @@ offeringRouter.post('/update/:id', async (req, res) => {
       where: { id },
       data: {
         ...(class_id !== undefined && { class_id: newClassId }),
-        ...(teacher_id !== undefined && { teacher_id: newTeacherId }),
+        // Replacing the whole co-teacher list is delete-all + connect-new
+        ...(teacher_ids !== undefined && { teachers: { set: newTeacherIds.map(id => ({ id })) } }),
         ...(term !== undefined && { term }),
         ...(section !== undefined && { section })
       }

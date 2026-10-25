@@ -24,7 +24,7 @@ import RequireRole from '../components/RequireRole'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import OfferingForm from '../components/OfferingForm'
 import OfferingDetailsDialog from '../components/OfferingDetailsDialog'
-import { fetchOfferings, fetchOfferingTerms, deleteOffering, fetchClasses, fetchTeachers } from '../services/api'
+import { fetchOfferings, fetchOfferingTerms, deleteOffering, fetchClasses } from '../services/api'
 
 /** Roles allowed to view / manage class offerings; every role except students. */
 const ALLOWED_ROLES = ['TEACHER', 'ADMIN']
@@ -54,11 +54,10 @@ function OfferingsContent () {
   const [terms, setTerms] = useState([])
   const [filterTerm, setFilterTerm] = useState('*')
 
-  // Reference lists for mapping class_id / teacher_id to display labels.
-  // The list API returns plain rows (no joins); these lists are small and
-  // are loaded once on mount.
+  // Reference list for mapping class_id to display labels. The list API
+  // returns plain rows plus a light teachers join; the class list is small
+  // and is loaded once on mount.
   const [classOptions, setClassOptions] = useState([])
-  const [teacherOptions, setTeacherOptions] = useState([])
 
   // Pagination (server-side)
   const [page, setPage] = useState(1)          // 1-based for API
@@ -116,16 +115,11 @@ function OfferingsContent () {
 
   const loadReferenceLists = useCallback(async () => {
     try {
-      const [classesResp, teachersResp] = await Promise.all([
-        fetchClasses(1, 100),
-        fetchTeachers(1, 100)
-      ])
+      const classesResp = await fetchClasses(1, 100)
       setClassOptions(classesResp.data || [])
-      setTeacherOptions(teachersResp.data || [])
     } catch (err) {
       // Missing reference lists only blank out the labels; not fatal.
       setClassOptions([])
-      setTeacherOptions([])
     }
   }, [])
 
@@ -134,7 +128,6 @@ function OfferingsContent () {
   }, [loadReferenceLists])
 
   const classById = useMemo(() => new Map(classOptions.map(c => [c.id, c])), [classOptions])
-  const teacherById = useMemo(() => new Map(teacherOptions.map(t => [t.id, t])), [teacherOptions])
 
   /* ---- Handlers ---- */
 
@@ -255,7 +248,7 @@ function OfferingsContent () {
                 <TableCell>{classById.get(o.class_id)?.title || ''}</TableCell>
                 <TableCell>{o.term}</TableCell>
                 <TableCell>{o.section}</TableCell>
-                <TableCell>{teacherById.get(o.teacher_id)?.username || ''}</TableCell>
+                <TableCell>{(o.teachers ?? []).map(t => t.username).join(', ')}</TableCell>
                 <TableCell align='right'>
                   <Tooltip title='Details'>
                     <IconButton size='small' onClick={() => setDetailsOffering(o)}>

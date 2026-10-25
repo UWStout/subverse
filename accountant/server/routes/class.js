@@ -101,7 +101,7 @@ classRouter.get('/:id', async (req, res) => {
       include: {
         offerings: {
           include: {
-            teacher: { select: { id: true, username: true, email: true } },
+            teachers: { select: { id: true, username: true, email: true }, orderBy: { id: 'asc' } },
             projects: true
           }
         }

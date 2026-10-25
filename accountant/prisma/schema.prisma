@@ -54,20 +54,22 @@ model Class {
   @@map("classes")
 }
 
+// An offering can be co-taught: the teacher list is an implicit many-to-many
+// relation (Prisma manages a `_TeacherOfferings` join table with cascade
+// deletes on both sides). scripts/migrate-multi-teacher.mjs moves existing
+// single-teacher databases over to this shape.
 model Offering {
   id          Int      @id @default(autoincrement())
   class_id    Int      @map("class_id")
-  teacher_id  Int      @map("teacher_id")
   term        String
   section     String
 
   class       Class    @relation(fields: [class_id], references: [id], onDelete: Cascade)
-  teacher     User     @relation("TeacherOfferings", fields: [teacher_id], references: [id], onDelete: Cascade)
+  teachers    User[]   @relation("TeacherOfferings")
   projects    Project[]
 
   @@unique([class_id, term, section])
   @@index([class_id])
-  @@index([teacher_id])
   @@map("offerings")
 }
 

@@ -156,7 +156,8 @@ export async function deleteUser (id) {
  * Each positional filter accepts a concrete value or '*' for "any".
  * Query params: ?page=N&limit=N  (defaults: page=1, limit=25)
  * Returns { data, total, page, limit, totalPages } of plain offering rows -
- * no joined class / teacher details (use the details route for those).
+ * Rows include a light teachers list (id + username); full class / teacher
+ * details live on the details route.
  */
 export async function fetchOfferings (term = '*', classId = '*', teacherId = '*', page = 1, limit = 25) {
   const res = await fetch(`${BASE}/offering/list/${term}/${classId}/${teacherId}?page=${page}&limit=${limit}`, { headers: getAuthHeaders() })
@@ -168,7 +169,7 @@ export async function fetchOfferings (term = '*', classId = '*', teacherId = '*'
   return res.json()
 }
 
-/** GET /offering/:id - full offering details (class, teacher, projects) */
+/** GET /offering/:id - full offering details (class, teachers, projects) */
 export async function fetchOffering (id) {
   const res = await fetch(`${BASE}/offering/${id}`, { headers: getAuthHeaders() })
   if (!res.ok) {
@@ -191,11 +192,11 @@ export async function fetchOfferingTerms () {
 }
 
 /** POST /offering/create */
-export async function createOffering ({ classId, teacherId, term, section }) {
+export async function createOffering ({ classId, teacherIds, term, section }) {
   const res = await fetch(`${BASE}/offering/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify({ class_id: classId, teacher_id: teacherId, term, section })
+    body: JSON.stringify({ class_id: classId, teacher_ids: teacherIds, term, section })
   })
   if (!res.ok) {
     handleUnauthorized(res)
@@ -206,10 +207,11 @@ export async function createOffering ({ classId, teacherId, term, section }) {
 }
 
 /** POST /offering/update/:id */
-export async function updateOffering (id, { classId, teacherId, term, section }) {
+export async function updateOffering (id, { classId, teacherIds, term, section }) {
   const payload = {}
   if (classId !== undefined) payload.class_id = classId
-  if (teacherId !== undefined) payload.teacher_id = teacherId
+  // Replaces the full co-teacher list when provided
+  if (teacherIds !== undefined) payload.teacher_ids = teacherIds
   if (term !== undefined) payload.term = term
   if (section !== undefined) payload.section = section
 

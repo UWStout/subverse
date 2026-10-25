@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Autocomplete,
   Box,
   Button,
   CircularProgress,
@@ -34,6 +35,7 @@ const NEW_CLASS_VALUE = '__new_class__'
 /**
  * Reusable offering form wrapped in a Dialog (mirrors UserForm).
  * Class and teacher options are loaded from the API when the dialog opens.
+ * Offerings may be co-taught: the teacher control is a multi-select.
  *
  * Props
  * -----
@@ -47,7 +49,8 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
 
   // Local form state (select values are kept as strings to match option values)
   const [classId, setClassId] = useState('')
-  const [teacherId, setTeacherId] = useState('')
+  // Co-taught: an array of teacher user IDs (one or more)
+  const [teacherIds, setTeacherIds] = useState([])
   const [term, setTerm] = useState('')
   const [section, setSection] = useState('')
 
@@ -79,7 +82,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
       setSection(offering.section || '')
     } else {
       setClassId('')
-      setTeacherId('')
+      setTeacherIds([])
       setTerm('')
       setSection('')
     }
@@ -98,7 +101,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
         setClasses(classResp.data || [])
         setTeachers(teacherResp.data || [])
         setClassId(offering ? String(offering.class_id) : '')
-        setTeacherId(offering ? String(offering.teacher_id) : '')
+        setTeacherIds((offering?.teachers ?? []).map(t => t.id))
       } catch (err) {
         if (!cancelled) setServerError(err.message)
       } finally {
@@ -134,7 +137,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
       }
       if (!newClassTitle.trim()) errs.newClassTitle = 'Title is required'
     }
-    if (!teacherId) errs.teacherId = 'Teacher is required'
+    if (teacherIds.length === 0) errs.teacherIds = 'At least one teacher is required'
     if (!term.trim()) {
       errs.term = 'Term is required'
     } else {
@@ -156,6 +159,13 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
     const rule = validationRules[key]
     return rule && rule.examples?.[0] ? `e.g. ${rule.examples[0]}` : ''
   }
+
+  // The Autocomplete wants option objects, not raw ids - resolve the selected
+  // ids against the loaded teacher list (empty while the options load).
+  const selectedTeachers = useMemo(
+    () => teacherIds.map(id => teachers.find(t => t.id === id)).filter(Boolean),
+    [teacherIds, teachers]
+  )
 
   /* ---- Submit handler ---- */
 
@@ -179,7 +189,7 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
 
       const payload = {
         classId: finalClassId,
-        teacherId: Number(teacherId),
+        teacherIds,
         term: term.trim(),
         section: section.trim()
       }
@@ -278,27 +288,24 @@ export default function OfferingForm ({ open, offering, onClose, onSubmit }) {
             </Accordion>
           )}
 
-          <FormControl fullWidth error={!!errors.teacherId}>
-            <InputLabel id='offering-teacher-label'>Teacher</InputLabel>
-            <Select
-              labelId='offering-teacher-label'
-              label='Teacher'
-              value={teacherId}
-              onChange={e => setTeacherId(e.target.value)}
-              disabled={loading || optionsLoading}
-            >
-              {teachers.map(t => (
-                <MenuItem key={t.id} value={String(t.id)}>
-                  {t.username}
-                </MenuItem>
-              ))}
-            </Select>
-            {errors.teacherId && (
-              <Typography variant='caption' color='error' sx={{ mt: 0.5, ml: 1 }}>
-                {errors.teacherId}
-              </Typography>
+          {/* Co-taught courses: pick one or more teachers */}
+          <Autocomplete
+            multiple
+            id='offering-teachers'
+            options={teachers}
+            getOptionLabel={t => (t && t.username) || ''}
+            value={selectedTeachers}
+            onChange={(event, value) => setTeacherIds(value.map(t => t.id))}
+            disabled={loading || optionsLoading}
+            renderInput={params => (
+              <TextField
+                {...params}
+                label='Teachers'
+                helperText={errors.teacherIds || 'One or more instructors (co-taught courses welcome)'}
+                error={!!errors.teacherIds}
+              />
             )}
-          </FormControl>
+          />
 
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField

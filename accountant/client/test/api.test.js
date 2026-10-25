@@ -334,19 +334,19 @@ describe('services/api', () => {
     it('posts the payload with snake_case id fields', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ id: 1 }))
 
-      await createOffering({ classId: 2, teacherId: 5, term: 'FALL25', section: '101' })
+      await createOffering({ classId: 2, teacherIds: [5], term: 'FALL25', section: '101' })
 
       expect(fetch).toHaveBeenCalledWith('/offering/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ class_id: 2, teacher_id: 5, term: 'FALL25', section: '101' })
+        body: JSON.stringify({ class_id: 2, teacher_ids: [5], term: 'FALL25', section: '101' })
       })
     })
 
     it('throws the server-provided error message on failure', async () => {
       fetch.mockResolvedValueOnce(jsonResponse({ error: 'An offering for this class already exists in this term and section' }, false))
 
-      await expect(createOffering({ classId: 1, teacherId: 1, term: 'FALL25', section: '101' })).rejects.toThrow(/already exists/)
+      await expect(createOffering({ classId: 1, teacherIds: [1], term: 'FALL25', section: '101' })).rejects.toThrow(/already exists/)
     })
   })
 
@@ -360,6 +360,18 @@ describe('services/api', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section: '102' })
+      })
+    })
+
+    it('includes teacher_ids when provided (replaces the co-teacher list)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ id: 1 }))
+
+      await updateOffering(1, { teacherIds: [2, 5] })
+
+      expect(fetch).toHaveBeenCalledWith('/offering/update/1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacher_ids: [2, 5] })
       })
     })
 
@@ -795,7 +807,7 @@ describe('services/api', () => {
     it('createOffering falls back to its default message', async () => {
       fetch.mockResolvedValueOnce(badJsonResponse())
 
-      await expect(createOffering({ classId: 1, teacherId: 1, term: 'FALL25', section: '101' })).rejects.toThrow('Failed to create offering')
+      await expect(createOffering({ classId: 1, teacherIds: [1], term: 'FALL25', section: '101' })).rejects.toThrow('Failed to create offering')
     })
 
     it('updateOffering falls back to its default message', async () => {

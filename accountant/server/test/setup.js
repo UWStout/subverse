@@ -206,14 +206,16 @@ export const TEST_CLASS = {
 }
 
 /**
- * Standard test offering fixture.
+ * Standard test offering fixture. `teachers` is populated the way the
+ * ownership checks and SVN sync expect (offerings are co-taught; this one
+ * has a single teacher, id 1).
  */
 export const TEST_OFFERING = {
   id: 1,
   class_id: 1,
-  teacher_id: 1,
   term: 'FALL25',
-  section: '101'
+  section: '101',
+  teachers: [{ id: 1, username: 'prof', email: 'prof@uni.edu' }]
 }
 
 /**

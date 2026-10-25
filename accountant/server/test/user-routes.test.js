@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
-import { mockPrisma, TEST_USER, authedApp, makeToken } from './setup.js'
+import { mockPrisma, mockMailer, mockSubversion, TEST_USER, authedApp, makeToken } from './setup.js'
 import path from 'path'
 
 // ---------------------------------------------------------------------------
@@ -306,6 +306,34 @@ describe('User API Routes', () => {
         .send({ username: 'testuser', email: 'test@example.com', password: 'secret' })
       expect(res.status).toBe(201)
       expect(res.body.user.type).toBe('STUDENT')
+    })
+
+    it('creates a password-less account with a set-password link when password is omitted (admin)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null)
+      const created = { ...TEST_USER, username: 'nopass', email: 'nopass@example.com', reset_token: 'rtok', reset_sent_at: new Date() }
+      mockPrisma.user.create.mockResolvedValue(created)
+
+      const res = await request(app)
+        .post('/user/create')
+        .set('Authorization', `Bearer ${ADMIN_TOKEN}`)
+        .send({ username: 'nopass', email: 'nopass@example.com' })
+      expect(res.status).toBe(201)
+
+      // The account is created with a reset token (not provisional) and a
+      // placeholder hash...
+      const dataArg = mockPrisma.user.create.mock.calls[0][0].data
+      expect(dataArg.reset_token).toBeTruthy()
+      expect(dataArg.verification_token).toBeUndefined()
+      expect(dataArg.password_hash).toBeTruthy()
+
+      // ...a set-password email is queued, and no SVN passwd entry yet (it is
+      // added when the user sets their first password)
+      expect(mockMailer.sendSetPasswordEmail).toHaveBeenCalledTimes(1)
+      expect(mockSubversion.setUserPassword).not.toHaveBeenCalled()
+
+      // The response never leaks tokens or hashes
+      expect(res.body.user).not.toHaveProperty('password_hash')
+      expect(res.body.user).not.toHaveProperty('reset_token')
     })
 
     it('creates a user with specified TEACHER type (admin)', async () => {

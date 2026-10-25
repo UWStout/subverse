@@ -10,7 +10,8 @@
  *     "password123" (hash computed with bcrypt, same as the auth routes)
  *   - 4 classes: GDD 200 Intro to Game Development, GDD 325 Exploratory Game
  *     Design, CS 450 Game Design Capstone, CS 458 Software Engineering Practicum
- *   - 8 offerings (two per class), each taught by a different teacher
+ *   - 8 offerings (two per class) - one instructor each, except every third
+ *     offering is co-taught with the next teacher in rotation
  *   - 24 projects (three per offering) with SVN/Git URLs, a random game
  *     engine type and descriptions
  *   - Student-to-project assignments: every project gets 1-3 students so that
@@ -144,8 +145,16 @@ CLASSES.forEach((cls, ci) => {
   offerings.push({ classIndex: ci, term: termB, section: sectionB })
 })
 
-/** One teacher per offering (8 teachers, 8 offerings - a perfect matching). */
-const shuffledTeachers = shuffle(teachers)
+/**
+ * One teacher per offering (8 teachers, 8 offerings - a positional matching),
+ * except every third offering is co-taught by the next teacher in rotation.
+ * Maps offering index -> array of indexes into `teachers`.
+ */
+const teachersOf = offerings.map((_, oi) => {
+  const list = [oi]
+  if (oi % 3 === 2) list.push((oi + 1) % teachers.length)
+  return list
+})
 
 /** Three projects per offering; titles are unique within each class. */
 const projects = [] // { offeringIndex, title, slug, type, repository_url, repository_type, description }
@@ -219,11 +228,6 @@ if (existingCount > 0 && !FORCE) {
   process.exit(1)
 }
 
-const teacherOf = {} // offering index -> teacher account
-shuffledTeachers.forEach((teacher, i) => {
-  teacherOf[i] = teacher
-})
-
 let result
 try {
   result = await db.$transaction(async tx => {
@@ -271,9 +275,9 @@ try {
       offeringRows.push(await tx.offering.create({
         data: {
           class_id: classRows[offering.classIndex].id,
-          teacher_id: teacherRows[oi].id,
           term: offering.term,
-          section: offering.section
+          section: offering.section,
+          teachers: { connect: teachersOf[oi].map(ti => ({ id: teacherRows[ti].id })) }
         }
       }))
     }
@@ -325,9 +329,18 @@ console.log('')
 console.log('Example logins:')
 console.log(`  admin:    ${result.adminRow.username}`)
 result.teacherRows.forEach((t, i) => {
-  const off = offerings[i]
-  const cls = CLASSES[off.classIndex]
-  console.log(`  teacher:  ${t.username}  (teaches ${cls.subject} ${cls.number} - ${off.term}, section ${off.section})`)
+  // A co-taught offering lists the same teacher twice in `teachersOf`, so
+  // dedupe by offering index before formatting the summary line.
+  const taught = [...new Set(
+    offerings
+      .map((off, oi) => (teachersOf[oi].includes(i) ? oi : null))
+      .filter(oi => oi !== null)
+  )].map(oi => {
+    const off = offerings[oi]
+    const cls = CLASSES[off.classIndex]
+    return `${cls.subject} ${cls.number} (${off.term}, section ${off.section})`
+  })
+  console.log(`  teacher:  ${t.username}  (teaches ${taught.join('; ')})`)
 })
 for (const s of result.studentRows.slice(0, 5)) {
   const n = assignments.filter(a => result.studentRows[a.studentIndex].id === s.id).length

@@ -112,10 +112,15 @@ function UsersContent () {
   function handleFormSubmit (createdUser) {
     // Reload the current page after a successful create / update
     loadUsers()
-    // New accounts are provisional until their email is verified; tell the
-    // operator that the verification email is on its way to the new user.
+    // Tell the operator which email is on its way to the new user: accounts
+    // created without a password get a set-password link instead of a
+    // verification email (the same path as bulk-created accounts).
     if (createdUser?.email) {
-      setNotice(`A verification email has been sent to ${createdUser.email} - they must open it and click the link before they can sign in.`)
+      if (createdUser.reset_sent_at != null && createdUser.verification_sent_at == null) {
+        setNotice(`A password setup link has been sent to ${createdUser.email} - they must open it and set a password before they can sign in.`)
+      } else {
+        setNotice(`A verification email has been sent to ${createdUser.email} - they must open it and click the link before they can sign in.`)
+      }
     }
   }
 

@@ -125,7 +125,10 @@ describe('Class API Routes', () => {
             id: 1,
             term: 'FALL25',
             section: '101',
-            teacher: { id: 1, username: 'prof', email: 'prof@uni.edu' },
+            teachers: [
+              { id: 1, username: 'prof', email: 'prof@uni.edu' },
+              { id: 3, username: 'admin', email: 'adm@uni.edu' }
+            ],
             projects: [{ id: 1, title: 'Final Project' }]
           }
         ]
@@ -136,7 +139,7 @@ describe('Class API Routes', () => {
       expect(res.status).toBe(200)
       expect(res.body.id).toBe(1)
       expect(res.body.offerings).toHaveLength(1)
-      expect(res.body.offerings[0].teacher.username).toBe('prof')
+      expect(res.body.offerings[0].teachers.map(t => t.username)).toEqual(['prof', 'admin'])
       expect(res.body.offerings[0].projects).toHaveLength(1)
     })
 

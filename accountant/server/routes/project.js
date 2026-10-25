@@ -5,10 +5,10 @@ import { authenticate, requireVerified } from '../middleware/auth.js'
 import { createRepository, synchronizeRepositoryAccess, renameRepository, deleteRepository, bestEffortSvn } from '../subversion.js'
 
 // Fetch a project with the relations the SVN sync helpers need
-// (assigned students + offering teacher usernames).
+// (assigned students + all offering (co-)teacher usernames).
 const SVN_SYNC_INCLUDE = {
   assignments: { include: { student: { select: { username: true } } } },
-  offering: { include: { teacher: { select: { username: true } } } }
+  offering: { include: { teachers: { select: { username: true } } } }
 }
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
@@ -137,13 +137,16 @@ projectRouter.post('/create', async (req, res) => {
     }
 
     // Verify the offering exists
-    const offering = await getDb().offering.findUnique({ where: { id: parseInt(offering_id, 10) } })
+    const offering = await getDb().offering.findUnique({
+      where: { id: parseInt(offering_id, 10) },
+      include: { teachers: { select: { id: true } } }
+    })
     if (!offering) {
       return res.status(404).json({ error: 'Offering not found' })
     }
 
-    // Teachers may only create projects in offerings they teach
-    if (req.user.type === 'TEACHER' && offering.teacher_id !== req.user.sub) {
+    // Teachers may only create projects in offerings they co-teach
+    if (req.user.type === 'TEACHER' && !offering.teachers.some(t => t.id === req.user.sub)) {
       return res.status(403).json({ error: 'Teachers can only create projects in classes they teach' })
     }
 
@@ -171,8 +174,8 @@ projectRouter.post('/create', async (req, res) => {
     const project = await getDb().project.create({ data })
 
     // Mirror the new project into the SVN server: create the repository with
-    // its standard structure and default properties, then sync access so the
-    // offering teacher already has r/w. Skipped entirely when the project's
+    // its standard structure and default properties, then sync access so all
+    // of the offering's (co-)teachers already have r/w. Skipped entirely when the project's
     // code lives in an external repository (create_subversion_repo === false).
     if (createDefaultSvnRepo) {
       await bestEffortSvn(`create project '${slug}'`, async () => {
@@ -232,20 +235,26 @@ projectRouter.post('/update/:id', async (req, res) => {
 
     // Teachers may only update projects that belong to offerings they teach
     if (req.user.type === 'TEACHER') {
-      const currentOffering = await getDb().offering.findUnique({ where: { id: existing.offering_id } })
-      if (!currentOffering || currentOffering.teacher_id !== req.user.sub) {
+      const currentOffering = await getDb().offering.findUnique({
+        where: { id: existing.offering_id },
+        include: { teachers: { select: { id: true } } }
+      })
+      if (!currentOffering || !currentOffering.teachers.some(t => t.id === req.user.sub)) {
         return res.status(403).json({ error: 'Teachers can only update projects in classes they teach' })
       }
     }
 
     // Validate new offering_id if it is being changed
     if (offering_id !== undefined) {
-      const newOffering = await getDb().offering.findUnique({ where: { id: parseInt(offering_id, 10) } })
+      const newOffering = await getDb().offering.findUnique({
+        where: { id: parseInt(offering_id, 10) },
+        include: { teachers: { select: { id: true } } }
+      })
       if (!newOffering) {
         return res.status(404).json({ error: 'Offering not found' })
       }
       // A teacher may only move a project into one of their own offerings
-      if (req.user.type === 'TEACHER' && newOffering.teacher_id !== req.user.sub) {
+      if (req.user.type === 'TEACHER' && !newOffering.teachers.some(t => t.id === req.user.sub)) {
         return res.status(403).json({ error: 'Teachers can only update projects in classes they teach' })
       }
     }
@@ -391,7 +400,7 @@ projectRouter.get('/:id', async (req, res) => {
         offering: {
           include: {
             class: true,
-            teacher: { select: { id: true, username: true, email: true } }
+            teachers: { select: { id: true, username: true, email: true }, orderBy: { id: 'asc' } }
           }
         },
         ...(isStudent
@@ -439,8 +448,11 @@ projectRouter.delete('/:id', async (req, res) => {
 
     // Teachers may only delete projects that belong to offerings they teach
     if (req.user.type === 'TEACHER') {
-      const offering = await getDb().offering.findUnique({ where: { id: existing.offering_id } })
-      if (!offering || offering.teacher_id !== req.user.sub) {
+      const offering = await getDb().offering.findUnique({
+        where: { id: existing.offering_id },
+        include: { teachers: { select: { id: true } } }
+      })
+      if (!offering || !offering.teachers.some(t => t.id === req.user.sub)) {
         return res.status(403).json({ error: 'Teachers can only delete projects in classes they teach' })
       }
     }

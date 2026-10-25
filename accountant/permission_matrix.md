@@ -45,11 +45,13 @@ The different user accounts have the following permission restrictions:
 | `GET /offering/terms/` | ✅ | ✅ | ✅  |
 | `GET /offering/list/` | ⚠️ Only classes with assigned projects | ⚠️ Only offerings they teach | ✅ |
 | `GET /offering/:id`| ⚠️ Only classes with assigned projects | ✅ | ✅ |
-| `POST /offering/create`| ❌ 403 | ⚠️ (with themselves as teacher) | ✅ |
-| `POST /offering/update/:id` | ❌ 403 | ⚠️ (with themselves as teacher, can't change teacher) | ✅ |
+| `POST /offering/create`| ❌ 403 | ⚠️ (teacher_ids: one or more TEACHER/ADMIN accounts) | ✅ |
+| `POST /offering/update/:id` | ❌ 403 | ⚠️ (teacher_ids, when provided, replaces the full co-teacher list) | ✅ |
 | `DELETE /offering/:id`| ❌ 403 | ⚠️ (with themselves as teacher) | ✅ |
 
 So anyone can get the list of terms. Students can only list the offerings of get details for classes where they have assignments (they cannot create, update, or delete). Teachers can only list, get details, create, update, or delete their OWN classes. Admins can do everything.
+
+Offerings support **co-teaching**: `POST /offering/create` takes `teacher_ids` (a non-empty array of user IDs, each of which must be a TEACHER or ADMIN account) and `POST /offering/update/:id` accepts an optional `teacher_ids` that REPLACES the entire co-teacher list when provided. Read responses expose a `teachers` array; the list route additionally filters by "user is one of the teachers" via the `:teacher_id` URL position.
 
 ### Project Routes
 The different user accounts have the following permission restrictions:

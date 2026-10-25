@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react'
 import {
+  Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
   TextField,
-  Typography,
-  Alert
+  Typography
 } from '@mui/material'
 import { checkAvailability, createUser, updateUser } from '../services/api'
 
@@ -40,6 +42,10 @@ export default function UserForm ({ open, user, selfEdit = false, onClose, onSub
   // Local form state
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
+  // Create mode only: when checked (the default) no password is collected -
+  // the user gets an emailed link to set their own first password (the same
+  // path as bulk-created accounts). Unchecking reveals the Password field.
+  const [emailPasswordLink, setEmailPasswordLink] = useState(true)
   const [password, setPassword] = useState('')
   const [type, setType] = useState('STUDENT')
   const [firstName, setFirstName] = useState('')
@@ -58,12 +64,14 @@ export default function UserForm ({ open, user, selfEdit = false, onClose, onSub
       setFirstName(user.first_name || '')
       setLastName(user.last_name || '')
       setType(user.type || 'STUDENT')
+      setEmailPasswordLink(false)
       setPassword('')
     } else {
       setUsername('')
       setEmail('')
       setFirstName('')
       setLastName('')
+      setEmailPasswordLink(true)
       setPassword('')
       setType('STUDENT')
     }
@@ -78,8 +86,9 @@ export default function UserForm ({ open, user, selfEdit = false, onClose, onSub
     if (!username.trim()) errs.username = 'Username is required'
     if (!email.trim()) errs.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Invalid email format'
-    // Password is required on create; optional on edit (blank keeps current)
-    if (!isEdit && !password) errs.password = 'Password is required'
+    // A password is only required on create when the "email a link" option
+    // is off; on edit it is optional (blank keeps the current password)
+    if (!isEdit && !emailPasswordLink && !password) errs.password = 'Password is required'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -116,8 +125,12 @@ export default function UserForm ({ open, user, selfEdit = false, onClose, onSub
 
       // Only admins may change a user's type; when editing one's own account
       // we omit it entirely so the server keeps the current type.
-      const payload = { username, email, password, firstName, lastName }
+      const payload = { username, email, firstName, lastName }
       if (!selfEdit) payload.type = type
+      // The password is sent on edit (blank keeps the current one) and on
+      // create only when the "email a link" option is off; omitted otherwise
+      // so the server takes its no-password path.
+      if (isEdit || !emailPasswordLink) payload.password = password
 
       if (isEdit) {
         await updateUser(user.id, payload)
@@ -182,16 +195,31 @@ export default function UserForm ({ open, user, selfEdit = false, onClose, onSub
             disabled={loading}
           />
 
-          <TextField
-            label='Password'
-            type='password'
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            error={!!errors.password}
-            helperText={errors.password || (isEdit ? 'Leave blank to keep current password' : '')}
-            fullWidth
-            disabled={loading}
-          />
+          {isEdit || !emailPasswordLink
+            ? (
+              <TextField
+                label='Password'
+                type='password'
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                error={!!errors.password}
+                helperText={errors.password || (isEdit ? 'Leave blank to keep current password' : '')}
+                fullWidth
+                disabled={loading}
+              />
+            )
+            : (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={emailPasswordLink}
+                    onChange={e => setEmailPasswordLink(e.target.checked)}
+                    disabled={loading}
+                  />
+                }
+                label='Email user a link to set their own password'
+              />
+            )}
 
           <FormControl fullWidth error={!!errors.type}>
             <InputLabel id='user-type-label'>Type</InputLabel>
