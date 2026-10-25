@@ -2,8 +2,8 @@ tls:
   stores:
     default:
       defaultCertificate:
-        certFile: /certs/custom-chain.pem
-        keyFile: /certs/privkey.pem
+        certFile: {{ env "CERT_FILE" }}
+        keyFile: {{ env "CERT_KEY_FILE" }}
 
 http:
   middlewares:

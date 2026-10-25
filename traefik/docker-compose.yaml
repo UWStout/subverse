@@ -18,6 +18,8 @@ services:
 
     environment:
       TZ: 'America/Chicago'
+      CERT_FILE: ${CERT_FILE}
+      CERT_KEY_FILE: ${CERT_KEY_FILE}
 
     networks:
       - traefik

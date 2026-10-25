@@ -10,7 +10,6 @@ entryPoints:
     address: ":443"
     forwardedHeaders:
       trustedIPs:
-        - "${STATIC_IP}"
         - "172.19.0.1/24"
 
 api:
