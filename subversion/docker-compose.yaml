@@ -26,7 +26,7 @@ services:
       # Subversion WebDAV service & router configuration for traefik
       traefik.http.services.svn_gateway.loadbalancer.server.port: "8080"
       traefik.http.routers.svn_gateway.service: "svn_gateway"
-      traefik.http.routers.svn_gateway.rule: "Host(`svn.subverse`)"
+      traefik.http.routers.svn_gateway.rule: "Host(`svn.${BASE_DOMAIN}`)"
       traefik.http.routers.svn_gateway.entrypoints: "websecure"
       traefik.http.routers.svn_gateway.tls: "true"
 
