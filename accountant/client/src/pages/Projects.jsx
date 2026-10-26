@@ -25,6 +25,7 @@ import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import ProjectForm from '../components/ProjectForm'
 import ProjectDetailsDialog from '../components/ProjectDetailsDialog'
 import BulkCreateDialog from '../components/BulkCreateDialog'
+import { usePersistentState } from '../hooks/usePersistentState'
 import { useAuth } from '../context/AuthContext'
 import { fetchProjects, deleteProject, fetchOfferingTerms, fetchClasses, fetchOfferings } from '../services/api'
 
@@ -51,8 +52,9 @@ export default function Projects () {
 
   // Filters - the list API requires at least one concrete value ('*' = any).
   // filterClass is a subject-number code (e.g. 'CS-101'), filterTerm a term.
-  const [filterClass, setFilterClass] = useState('*')
-  const [filterTerm, setFilterTerm] = useState('*')
+  // Both are remembered per browser so returning users see their last filter.
+  const [filterClass, setFilterClass] = usePersistentState('projects.filterClass', '*')
+  const [filterTerm, setFilterTerm] = usePersistentState('projects.filterTerm', '*')
 
   // Reference lists for mapping offering_id / class_id to display labels.
   // The list API returns plain rows (no joins); these lists are small and
@@ -63,9 +65,9 @@ export default function Projects () {
   // Term filter chips (distinct terms from the API + 'All')
   const [terms, setTerms] = useState([])
 
-  // Pagination (server-side)
-  const [page, setPage] = useState(1)          // 1-based for API
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  // Pagination (server-side), remembered per browser like the filters.
+  const [page, setPage] = usePersistentState('projects.page', 1)          // 1-based for API
+  const [rowsPerPage, setRowsPerPage] = usePersistentState('projects.rowsPerPage', 10)
 
   // Modal state
   const [formOpen, setFormOpen] = useState(false)
@@ -93,6 +95,10 @@ export default function Projects () {
       const resp = await fetchProjects(filterClass, filterTerm, page, rowsPerPage)
       setProjects(resp.data || [])
       setTotal(resp.total || 0)
+      // A remembered page may point past the last page if rows were removed
+      // since - snap to the last real page (one refetch, then stable).
+      const lastPage = Math.max(resp.totalPages, 1)
+      if (page > lastPage) setPage(lastPage)
     } catch (err) {
       setError(err.message)
       setProjects([])

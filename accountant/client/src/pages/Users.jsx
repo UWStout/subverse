@@ -28,6 +28,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import UserForm from '../components/UserForm'
 import UserDetailsDialog from '../components/UserDetailsDialog'
+import { usePersistentState } from '../hooks/usePersistentState'
 import { fetchUsers, deleteUser } from '../services/api'
 
 const TYPE_OPTIONS = [
@@ -70,10 +71,11 @@ function UsersContent () {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  // Filter & pagination (server-side)
-  const [filterType, setFilterType] = useState('*')
-  const [page, setPage] = useState(1)          // 1-based for API
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  // Filter & pagination (server-side). All three are remembered per browser
+  // so returning users land back on the same filter / page / row count.
+  const [filterType, setFilterType] = usePersistentState('users.filterType', '*')
+  const [page, setPage] = usePersistentState('users.page', 1)          // 1-based for API
+  const [rowsPerPage, setRowsPerPage] = usePersistentState('users.rowsPerPage', 10)
 
   // Modal state
   const [formOpen, setFormOpen] = useState(false)
@@ -95,6 +97,10 @@ function UsersContent () {
       const resp = await fetchUsers(filterType, page, rowsPerPage)
       setUsers(resp.data || [])
       setTotal(resp.total || 0)
+      // A remembered page may point past the last page if rows were removed
+      // since - snap to the last real page (one refetch, then stable).
+      const lastPage = Math.max(resp.totalPages, 1)
+      if (page > lastPage) setPage(lastPage)
     } catch (err) {
       setError(err.message)
       setUsers([])

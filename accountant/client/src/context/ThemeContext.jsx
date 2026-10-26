@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useMemo } from 'react'
 import { createTheme, ThemeProvider as MUIThemeProvider } from '@mui/material'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 const ThemeContext = createContext(null)
 
@@ -11,9 +12,12 @@ export function useThemeMode () {
 
 /**
  * Wraps MUIThemeProvider and exposes mode + toggle via context.
+ * The chosen mode is remembered per browser so returning visitors get the
+ * same look (a tampered stored value falls back to light).
  */
 export function ThemeProvider ({ children }) {
-  const [mode, setMode] = useState('light')
+  const [mode, setMode] = usePersistentState('theme', 'light', v =>
+    v === 'light' || v === 'dark' ? v : null)
 
   const toggle = () => setMode(m => (m === 'light' ? 'dark' : 'light'))
 

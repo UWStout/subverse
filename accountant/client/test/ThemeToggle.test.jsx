@@ -50,4 +50,44 @@ describe('ThemeToggle', () => {
       'useThemeMode must be used within ThemeProvider'
     )
   })
+
+  /* ---- Persisted state (theme remembered per browser) ---- */
+
+  it('remembers the chosen mode in localStorage', async () => {
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>
+    )
+
+    await user.click(screen.getByRole('button'))
+    expect(await screen.findByTestId('LightModeIcon')).toBeInTheDocument()
+    expect(JSON.parse(window.localStorage.getItem('accountant:theme'))).toBe('dark')
+  })
+
+  it('restores a previously stored dark mode', () => {
+    window.localStorage.setItem('accountant:theme', JSON.stringify('dark'))
+
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>
+    )
+
+    // Dark mode shows the "switch to light" icon
+    expect(screen.getByTestId('LightModeIcon')).toBeInTheDocument()
+  })
+
+  it('ignores a tampered stored theme value', () => {
+    window.localStorage.setItem('accountant:theme', JSON.stringify('neon'))
+
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>
+    )
+
+    // Falls back to light mode (shows the "switch to dark" icon)
+    expect(screen.getByTestId('DarkModeIcon')).toBeInTheDocument()
+  })
 })

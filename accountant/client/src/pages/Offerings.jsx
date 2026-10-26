@@ -24,6 +24,7 @@ import RequireRole from '../components/RequireRole'
 import { LoadingRow, EmptyRow } from '../components/TableRowStates'
 import OfferingForm from '../components/OfferingForm'
 import OfferingDetailsDialog from '../components/OfferingDetailsDialog'
+import { usePersistentState } from '../hooks/usePersistentState'
 import { fetchOfferings, fetchOfferingTerms, deleteOffering, fetchClasses } from '../services/api'
 
 /** Roles allowed to view / manage class offerings; every role except students. */
@@ -50,18 +51,19 @@ function OfferingsContent () {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Term filter chips (distinct terms from the API + 'All')
+  // Term filter chips (distinct terms from the API + 'All'). The selected
+  // term is remembered per browser so returning users see their last filter.
   const [terms, setTerms] = useState([])
-  const [filterTerm, setFilterTerm] = useState('*')
+  const [filterTerm, setFilterTerm] = usePersistentState('offerings.filterTerm', '*')
 
   // Reference list for mapping class_id to display labels. The list API
   // returns plain rows plus a light teachers join; the class list is small
   // and is loaded once on mount.
   const [classOptions, setClassOptions] = useState([])
 
-  // Pagination (server-side)
-  const [page, setPage] = useState(1)          // 1-based for API
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  // Pagination (server-side), remembered per browser like the filter.
+  const [page, setPage] = usePersistentState('offerings.page', 1)          // 1-based for API
+  const [rowsPerPage, setRowsPerPage] = usePersistentState('offerings.rowsPerPage', 10)
 
   // Modal state
   const [formOpen, setFormOpen] = useState(false)
@@ -83,6 +85,10 @@ function OfferingsContent () {
       const resp = await fetchOfferings(filterTerm, '*', '*', page, rowsPerPage)
       setOfferings(resp.data || [])
       setTotal(resp.total || 0)
+      // A remembered page may point past the last page if rows were removed
+      // since - snap to the last real page (one refetch, then stable).
+      const lastPage = Math.max(resp.totalPages, 1)
+      if (page > lastPage) setPage(lastPage)
     } catch (err) {
       setError(err.message)
       setOfferings([])

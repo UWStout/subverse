@@ -156,6 +156,18 @@ describe('Projects page', () => {
     expect(fetchProjects).toHaveBeenCalledWith('CS-101', '*', 1, 10)
   })
 
+  /* ---- Persisted state (per-browser memory of filters / pagination) ---- */
+
+  it('restores the remembered class filter on load', async () => {
+    window.localStorage.setItem('accountant:projects.filterClass', JSON.stringify('CS-101'))
+
+    renderPage(ADMIN)
+
+    // The remembered concrete filter means the list loads immediately...
+    await screen.findByText('Final Project')
+    expect(fetchProjects).toHaveBeenCalledWith('CS-101', '*', 1, 10)
+  })
+
   it('fetches projects when a term chip is selected', async () => {
     renderPage(ADMIN)
     await screen.findByText('Class Projects')

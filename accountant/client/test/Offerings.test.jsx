@@ -143,6 +143,17 @@ describe('Offerings page', () => {
     expect(fetchOfferings).toHaveBeenCalledWith('*', '*', '*', 1, 10)
   })
 
+  /* ---- Persisted state (per-browser memory of filters / pagination) ---- */
+
+  it('restores the remembered term filter on load', async () => {
+    window.localStorage.setItem('accountant:offerings.filterTerm', JSON.stringify('SPRING26'))
+
+    renderPage(TEACHER)
+
+    await screen.findByText('Class Offerings')
+    expect(fetchOfferings).toHaveBeenCalledWith('SPRING26', '*', '*', 1, 10)
+  })
+
   it('shows the empty state when no offerings match', async () => {
     fetchOfferings.mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 })
 

@@ -144,6 +144,30 @@ describe('Users page', () => {
     expect(fetchUsers).toHaveBeenCalledWith('*', 1, 10)
   })
 
+  /* ---- Persisted state (per-browser memory of filters / pagination) ---- */
+
+  it('restores the remembered filter and row count on load', async () => {
+    window.localStorage.setItem('accountant:users.filterType', JSON.stringify('TEACHER'))
+    window.localStorage.setItem('accountant:users.rowsPerPage', '25')
+
+    renderPage(USER_1)
+
+    await screen.findByText('alice')
+    expect(fetchUsers).toHaveBeenCalledWith('TEACHER', 1, 25)
+  })
+
+  it('snaps a remembered page past the last one back to the final page', async () => {
+    // Last visit ended on page 9; only one page of users exists now.
+    window.localStorage.setItem('accountant:users.page', '9')
+
+    renderPage(USER_1)
+
+    // The first fetch honors the remembered page...
+    await waitFor(() => expect(fetchUsers).toHaveBeenCalledWith('*', 9, 10))
+    // ...then the clamp refetches the last real page.
+    await waitFor(() => expect(fetchUsers).toHaveBeenLastCalledWith('*', 1, 10))
+  })
+
   it('shows the empty state when no users match', async () => {
     fetchUsers.mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 0 })
 
