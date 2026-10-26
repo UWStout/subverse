@@ -130,11 +130,11 @@ describe('Users page', () => {
     await within(table).findByText('carol')
     // One badge of each kind is shown for the two pending accounts
     expect(within(table).getByText('Unverified')).toBeInTheDocument()
-    expect(within(table).getByText('Not activated')).toBeInTheDocument()
+    expect(within(table).getByText('Password reset')).toBeInTheDocument()
     // The fully active account carries neither badge
     const aliceRow = within(table).getByText('alice').closest('tr')
     expect(within(aliceRow).queryByText('Unverified')).not.toBeInTheDocument()
-    expect(within(aliceRow).queryByText('Not activated')).not.toBeInTheDocument()
+    expect(within(aliceRow).queryByText('Password reset')).not.toBeInTheDocument()
   })
 
   it('fetches the default page with no type filter', async () => {

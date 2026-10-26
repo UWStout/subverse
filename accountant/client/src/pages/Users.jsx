@@ -246,7 +246,7 @@ function UsersContent () {
                       <Tooltip title='No password set yet - the account is locked out until they open the emailed setup link and choose a password'>
                         <Chip
                           icon={<LockOutlinedIcon />}
-                          label='Not activated'
+                          label='Password reset'
                           color='error'
                           variant='outlined'
                           size='small'
