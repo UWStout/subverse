@@ -17,6 +17,7 @@ import {
 } from '@mui/material'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import MailOutlinedIcon from '@mui/icons-material/MailOutlined'
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import InfoIcon from '@mui/icons-material/Info'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -236,6 +237,17 @@ function UsersContent () {
                           icon={<MailOutlinedIcon />}
                           label='Unverified'
                           color='warning'
+                          variant='outlined'
+                          size='small'
+                        />
+                      </Tooltip>
+                    )}
+                    {u.reset_sent_at != null && (
+                      <Tooltip title='No password set yet - the account is locked out until they open the emailed setup link and choose a password'>
+                        <Chip
+                          icon={<LockOutlinedIcon />}
+                          label='Not activated'
+                          color='error'
                           variant='outlined'
                           size='small'
                         />

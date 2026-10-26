@@ -111,6 +111,32 @@ describe('Users page', () => {
     expect(within(table).getByText('STUDENT')).toBeInTheDocument()
   })
 
+  it('shows activation badges for pending accounts (unverified email / no password)', async () => {
+    fetchUsers.mockResolvedValue({
+      data: [
+        USER_1,
+        { ...USER_1, id: 2, username: 'bob', verification_sent_at: new Date().toISOString() },
+        { ...USER_1, id: 3, username: 'carol', reset_sent_at: new Date().toISOString() }
+      ],
+      total: 3,
+      page: 1,
+      limit: 25,
+      totalPages: 1
+    })
+
+    renderPage(USER_1)
+
+    const table = screen.getByRole('table')
+    await within(table).findByText('carol')
+    // One badge of each kind is shown for the two pending accounts
+    expect(within(table).getByText('Unverified')).toBeInTheDocument()
+    expect(within(table).getByText('Not activated')).toBeInTheDocument()
+    // The fully active account carries neither badge
+    const aliceRow = within(table).getByText('alice').closest('tr')
+    expect(within(aliceRow).queryByText('Unverified')).not.toBeInTheDocument()
+    expect(within(aliceRow).queryByText('Not activated')).not.toBeInTheDocument()
+  })
+
   it('fetches the default page with no type filter', async () => {
     renderPage(USER_1)
 
