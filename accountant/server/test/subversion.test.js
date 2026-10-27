@@ -132,8 +132,8 @@ describe('buildAccessControlFile', () => {
     expect(content).toContain('final-project = lellison, rfoster, lito')
     expect(content).toContain('group-work = nibarra, sberrier')
     expect(content).toContain('[/]\n@admins = rw')
-    expect(content).toContain('[/final-project]\n@final-project = rw')
-    expect(content).toContain('[/group-work]\n@group-work = rw')
+    expect(content).toContain('[final-project:/]\n@final-project = rw')
+    expect(content).toContain('[group-work:/]\n@group-work = rw')
   })
 
   it('adds an admins group with universal r/w for ADMIN users', () => {
@@ -166,7 +166,7 @@ describe('buildAccessControlFile', () => {
       ...projects
     ])
     expect(content).not.toContain('empty-proj')
-    expect(content).toContain('[/final-project]')
+    expect(content).toContain('[final-project:/]')
   })
 
   it('excludes usernames that are unsafe in authz syntax', () => {
@@ -529,7 +529,7 @@ describe('synchronizeRepositoryAccess', () => {
     const content = writtenTo(AUTHZ_FILE)
     expect(content).toBe(subversion.buildAccessControlFile(dbProjects))
     expect(content).toContain('final-project = lellison, lito')
-    expect(content).toContain('[/final-project]\n@final-project = rw')
+    expect(content).toContain('[final-project:/]\n@final-project = rw')
   })
 
   it('is a no-op for the passwd file when entries already match the database', async () => {

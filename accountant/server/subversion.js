@@ -178,7 +178,7 @@ export function parsePasswdUsernames (content) {
  *     repository. There is deliberately no blanket read default: only users
  *     explicitly granted access (admins or one of their project groups) can
  *     see anything;
- *   - one `[/<slug>]` section granting the project group full r/w on its repo.
+ *   - one `[<slug>:/]` section granting the project group full r/w on its repo.
  *
  * @param {Object[]} projects Rows shaped like the Prisma Project model with
  *   `assignments[].student.username` and `offering.teachers[].username`
@@ -214,7 +214,7 @@ export function buildAccessControlFile (projects, adminUsernames = []) {
     if (members.size === 0) continue
 
     lines.push(`${project.slug} = ${[...members].join(', ')}`)
-    repoSections.push('', `[/${project.slug}]`, `@${project.slug} = rw`)
+    repoSections.push('', `[${project.slug}:/]`, `@${project.slug} = rw`)
   }
 
   lines.push('', '[/]', '@admins = rw')
