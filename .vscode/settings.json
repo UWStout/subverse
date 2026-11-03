@@ -1,4 +1,15 @@
 {
+    "logViewer.watch": [
+
+        {
+            "title": "Traefik Access",
+            "pattern": "traefik/logs/access.log"
+        },
+        {
+            "title": "Traefik Messages",
+            "pattern": "traefik/logs/traefik.log"
+        }
+    ],
     "cSpell.words": [
         "addext",
         "autoincrement",
