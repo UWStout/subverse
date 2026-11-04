@@ -12,6 +12,16 @@ entryPoints:
       trustedIPs:
         - "172.19.0.1/24"
 
+# Upstream (backend) connection handling.
+# idleConnTimeout MUST stay lower than the Apache KeepAliveTimeout in
+# subversion/config/apache2-gateway/conf.d/default.conf (65s). That way
+# Traefik always closes idle backend connections first. If Apache closed
+# them first, Traefik could reuse a dead connection for the next request
+# and return 502 on non-retryable requests (PUT/MKCOL during commits).
+transport:
+  responding:
+    idleConnTimeout: "10s"
+
 api:
   dashboard: true
   debug: false
