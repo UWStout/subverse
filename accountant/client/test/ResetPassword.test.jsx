@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ResetPassword from '../src/pages/ResetPassword'
-import { resetPassword } from '../src/services/api'
+import { resetPassword, renewResetToken } from '../src/services/api'
 
 // Mock the API layer so tests never touch the network.
 vi.mock('../src/services/api', () => ({
-  resetPassword: vi.fn()
+  resetPassword: vi.fn(),
+  renewResetToken: vi.fn()
 }))
 
 function renderReset (path = '/reset-password') {
@@ -16,6 +17,7 @@ function renderReset (path = '/reset-password') {
       <Routes>
         <Route path='/reset-password' element={<ResetPassword />} />
         <Route path='/login' element={<div>Login page</div>} />
+        <Route path='/forgot-password' element={<div>Forgot password page</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -77,15 +79,69 @@ describe('ResetPassword page', () => {
     expect(await screen.findByText('Password is required')).toBeInTheDocument()
   })
 
-  it('shows the server error for an invalid or expired token', async () => {
-    resetPassword.mockRejectedValue(new Error('Reset token has expired. Request a new one.'))
-    renderReset('/reset-password?token=old')
+  it('still shows the server error inline for a non-expiry failure', async () => {
+    resetPassword.mockRejectedValue(new Error('Invalid reset token'))
+    renderReset('/reset-password?token=bad')
 
     await user.type(screen.getByLabelText('New Password'), 'new-secret-1')
     await user.type(screen.getByLabelText('Confirm New Password'), 'new-secret-1')
     await user.click(screen.getByRole('button', { name: 'Reset Password' }))
 
-    expect(await screen.findByText(/expired/i)).toBeInTheDocument()
+    expect(await screen.findByText('Invalid reset token')).toBeInTheDocument()
+  })
+})
+
+describe('ResetPassword page - expired token', () => {
+  let user
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    user = await userEvent.setup()
+  })
+
+  /** Submit the form with an expired-token rejection to enter the expired state. */
+  async function expireToken () {
+    const err = new Error('Reset token has expired. Request a new one.')
+    err.code = 'RESET_TOKEN_EXPIRED'
+    err.status = 410
+    resetPassword.mockRejectedValue(err)
+
+    renderReset('/reset-password?token=old')
+    await user.type(screen.getByLabelText('New Password'), 'new-secret-1')
+    await user.type(screen.getByLabelText('Confirm New Password'), 'new-secret-1')
+    await user.click(screen.getByRole('button', { name: 'Reset Password' }))
+    await screen.findByText(/link has expired/i)
+  }
+
+  it('shows the expired view with a fresh-link offer instead of a dead-end error', async () => {
+    await expireToken()
+
+    expect(screen.getByText(/link has expired/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send Me a New Link' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /request a new link manually/i })).toBeInTheDocument()
+    // The (useless) password form is gone
+    expect(screen.queryByLabelText('New Password')).not.toBeInTheDocument()
+  })
+
+  it('sends a new reset link and confirms when asked', async () => {
+    renewResetToken.mockResolvedValue({ message: 'If the link matched an account, a new password reset email has been sent' })
+    await expireToken()
+
+    await user.click(screen.getByRole('button', { name: 'Send Me a New Link' }))
+
+    expect(renewResetToken).toHaveBeenCalledWith('old')
+    expect(await screen.findByText(/a new password reset email has been sent/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign In' })).toBeInTheDocument()
+  })
+
+  it('shows a server error if the fresh link cannot be sent', async () => {
+    renewResetToken.mockRejectedValue(new Error('Failed to renew password reset'))
+    await expireToken()
+
+    await user.click(screen.getByRole('button', { name: 'Send Me a New Link' }))
+
+    expect(await screen.findByText('Failed to renew password reset')).toBeInTheDocument()
+    expect(screen.queryByText(/a new password reset email has been sent/i)).not.toBeInTheDocument()
   })
 })
 

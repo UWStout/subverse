@@ -56,6 +56,26 @@ export async function deliverSetPasswordEmail (user, token) {
 }
 
 /**
+ * Reissue a fresh reset token for the account currently holding `token`
+ * (matched even when that token is expired - expired tokens are not
+ * consumed, so they remain in the database until replaced). The fresh token
+ * replaces the old one and the send time is reset, restarting the TTL.
+ * Returns { user, token } when a matching account exists, or null otherwise.
+ */
+export async function renewPasswordResetByToken (token) {
+  const db = getDatabase()
+  const user = await db.user.findFirst({ where: { reset_token: token } })
+  if (!user) return null
+
+  const newToken = generateVerificationToken()
+  await db.user.update({
+    where: { id: user.id },
+    data: { reset_token: newToken, reset_sent_at: new Date() }
+  })
+  return { user, token: newToken }
+}
+
+/**
  * Consume a reset token: set the account's password and clear the token.
  * The caller supplies an already-hashed password.
  *

@@ -85,13 +85,15 @@ describe('Email Verification', () => {
       expect(updateCall.data.verification_sent_at).toBeNull()
     })
 
-    it('returns 410 when the token is past its 15-minute lifetime', async () => {
+    it('returns 410 with an expired code when the token is past its 15-minute lifetime', async () => {
       const stale = { ...PROVISIONAL_USER, verification_sent_at: new Date(Date.now() - 16 * 60_000).toISOString() }
       mockPrisma.user.findFirst.mockResolvedValue(stale)
 
       const res = await request(authApp).post('/auth/verify-email').send({ token: 'pending-token-123' })
       expect(res.status).toBe(410)
       expect(res.body.error).toMatch(/expired/i)
+      // The client keys off this code to offer a fresh link
+      expect(res.body.code).toBe('VERIFICATION_TOKEN_EXPIRED')
       // Expired tokens are not consumed; the account can request a fresh one
       expect(mockPrisma.user.update).not.toHaveBeenCalled()
     })
@@ -102,6 +104,56 @@ describe('Email Verification', () => {
       const res = await request(authApp).post('/auth/verify-email').send({ token: 'x' })
       expect(res.status).toBe(500)
       expect(res.body.error).toMatch(/failed/i)
+    })
+  })
+
+  // ---- POST /auth/renew-verification-token ----
+  describe('POST /auth/renew-verification-token', () => {
+    it('returns 400 when the token field is missing', async () => {
+      const res = await request(authApp).post('/auth/renew-verification-token').send({})
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/required/i)
+    })
+
+    it('reissues a fresh token and re-sends the verification email when an account holds the token', async () => {
+      const stale = { ...PROVISIONAL_USER, verification_sent_at: new Date(Date.now() - 16 * 60_000).toISOString() }
+      mockPrisma.user.findFirst.mockResolvedValue(stale)
+      mockPrisma.user.update.mockImplementation(async ({ where, data }) => ({ ...stale, ...where, ...data }))
+
+      const res = await request(authApp).post('/auth/renew-verification-token').send({ token: 'pending-token-123' })
+      expect(res.status).toBe(200)
+      expect(res.body.message).toMatch(/new verification email has been sent/i)
+
+      // The stored token is replaced (and the send time reset, restarting the TTL)
+      const updateCall = mockPrisma.user.update.mock.calls[0][0]
+      expect(updateCall.where).toEqual({ id: TEST_USER.id })
+      expect(updateCall.data.verification_token).toMatch(/^[a-f0-9]{64}$/)
+      expect(updateCall.data.verification_token).not.toBe('pending-token-123')
+      expect(updateCall.data.verification_sent_at).toBeInstanceOf(Date)
+
+      // The fresh token is emailed, not the stale one
+      expect(mockMailer.sendVerificationEmail).toHaveBeenCalledTimes(1)
+      const [emailedUser, emailedToken] = mockMailer.sendVerificationEmail.mock.calls[0]
+      expect(emailedUser.email).toBe(TEST_USER.email)
+      expect(emailedToken).toBe(updateCall.data.verification_token)
+    })
+
+    it('responds identically when no account holds the token (no enumeration)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null)
+
+      const res = await request(authApp).post('/auth/renew-verification-token').send({ token: 'nope' })
+      expect(res.status).toBe(200)
+      // Same generic message as the found case
+      expect(res.body.message).toMatch(/new verification email has been sent/i)
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
+      expect(mockMailer.sendVerificationEmail).not.toHaveBeenCalled()
+    })
+
+    it('returns 500 when the database fails', async () => {
+      mockPrisma.user.findFirst.mockRejectedValue(new Error('DB down'))
+
+      const res = await request(authApp).post('/auth/renew-verification-token').send({ token: 'x' })
+      expect(res.status).toBe(500)
     })
   })
 

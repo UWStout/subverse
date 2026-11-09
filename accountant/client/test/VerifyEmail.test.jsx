@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import VerifyEmail from '../src/pages/VerifyEmail'
 import { useAuth } from '../src/context/AuthContext'
-import { verifyEmail, resendVerification, fetchCurrentUser } from '../src/services/api'
+import { verifyEmail, renewVerificationToken, resendVerification, fetchCurrentUser } from '../src/services/api'
 
 // Mock the auth context - the page only consumes the useAuth hook.
 vi.mock('../src/context/AuthContext', () => ({
@@ -16,6 +16,7 @@ vi.mock('../src/context/AuthContext', () => ({
 // pure helper, so the real implementation is inlined into the mock.
 vi.mock('../src/services/api', () => ({
   verifyEmail: vi.fn(),
+  renewVerificationToken: vi.fn(),
   resendVerification: vi.fn(),
   fetchCurrentUser: vi.fn(),
   isEmailVerified: (user) => !!user && user.verification_sent_at == null
@@ -150,11 +151,61 @@ describe('VerifyEmail page', () => {
     expect(screen.queryByText('Invalid verification token')).not.toBeInTheDocument()
   })
 
-  it('offers a resend when the token expired and the user is logged in', async () => {
-    verifyEmail.mockRejectedValue(new Error('Verification token has expired. Request a new one.'))
-    renderVerify(UNVERIFIED, '/verify?token=old')
+  it('offers a resend to a logged-in user for a non-expiry failure', async () => {
+    verifyEmail.mockRejectedValue(new Error('Invalid verification token'))
+    renderVerify(UNVERIFIED, '/verify?token=bad')
 
-    expect(await screen.findByText(/expired/i)).toBeInTheDocument()
+    expect(await screen.findByText('Invalid verification token')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Resend Verification Email' })).toBeInTheDocument()
+  })
+})
+
+describe('VerifyEmail page - expired token', () => {
+  let user
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    setUser = vi.fn()
+    user = await userEvent.setup()
+  })
+
+  /** Load the page with a token that the server reports as expired. */
+  async function expireToken () {
+    const err = new Error('Verification token has expired. Request a new one.')
+    err.code = 'VERIFICATION_TOKEN_EXPIRED'
+    err.status = 410
+    verifyEmail.mockRejectedValue(err)
+
+    renderVerify(null, '/verify?token=old')
+    await screen.findByText(/link has expired/i)
+  }
+
+  it('shows the expired view with a fresh-link offer instead of a dead-end error', async () => {
+    await expireToken()
+
+    expect(screen.getByText(/link has expired/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send Me a New Link' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign In' })).toBeInTheDocument()
+  })
+
+  it('sends a new verification link and confirms when asked', async () => {
+    renewVerificationToken.mockResolvedValue({ message: 'If the link matched an account, a new verification email has been sent' })
+    await expireToken()
+
+    await user.click(screen.getByRole('button', { name: 'Send Me a New Link' }))
+
+    expect(renewVerificationToken).toHaveBeenCalledWith('old')
+    expect(await screen.findByText(/a new verification email has been sent/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign In' })).toBeInTheDocument()
+  })
+
+  it('shows a server error if the fresh link cannot be sent', async () => {
+    renewVerificationToken.mockRejectedValue(new Error('Failed to renew verification request'))
+    await expireToken()
+
+    await user.click(screen.getByRole('button', { name: 'Send Me a New Link' }))
+
+    expect(await screen.findByText('Failed to renew verification request')).toBeInTheDocument()
+    expect(screen.queryByText(/a new verification email has been sent/i)).not.toBeInTheDocument()
   })
 })

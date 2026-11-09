@@ -63,6 +63,21 @@ export async function reissueVerificationToken (userId) {
 }
 
 /**
+ * Reissue a fresh verification token for the account currently holding
+ * `token` (matched even when that token is expired - expired tokens are not
+ * consumed, so they remain in the database until replaced). The fresh token
+ * replaces the old one and the send time is reset, restarting the TTL.
+ * Returns { user, token } when a matching account exists, or null otherwise.
+ */
+export async function renewVerificationByToken (token) {
+  const db = getDatabase()
+  const user = await db.user.findFirst({ where: { verification_token: token } })
+  if (!user) return null
+
+  return reissueVerificationToken(user.id)
+}
+
+/**
  * Find the account whose pending verification token matches and clear it,
  * which lifts the account's provisional status. Tokens older than
  * VERIFICATION_TOKEN_TTL (measured from verification_sent_at) are expired.

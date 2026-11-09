@@ -424,7 +424,9 @@ export function isEmailVerified (user) {
 /**
  * POST /auth/verify-email - public endpoint; confirm an account's email using
  * the token from the verification link (see the /verify page). Throws with
- * the server message for invalid (400) or expired (410) tokens.
+ * the server message for invalid (400) or expired (410) tokens; expired
+ * tokens reject with a `code: 'VERIFICATION_TOKEN_EXPIRED'` body, carried on
+ * the thrown error so the verify page can offer to send a fresh link.
  */
 export async function verifyEmail (token) {
   const res = await fetch(`${BASE}/auth/verify-email`, {
@@ -434,7 +436,30 @@ export async function verifyEmail (token) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Failed to verify email address' }))
-    throw new Error(err.error || 'Failed to verify email address')
+    const error = new Error(err.error || 'Failed to verify email address')
+    error.status = res.status
+    error.code = err.code
+    throw error
+  }
+  return res.json()
+}
+
+/**
+ * POST /auth/renew-verification-token - public endpoint; reissue the
+ * verification email for the account holding `token` (e.g. one that just
+ * came back expired) and email a fresh link. Responds identically whether
+ * or not the token matches an account, so callers should show a generic
+ * confirmation message on success.
+ */
+export async function renewVerificationToken (token) {
+  const res = await fetch(`${BASE}/auth/renew-verification-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token })
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to renew verification request' }))
+    throw new Error(err.error || 'Failed to renew verification request')
   }
   return res.json()
 }
@@ -481,7 +506,9 @@ export async function requestPasswordReset (identifier) {
 /**
  * POST /auth/reset-password - public endpoint; set a new password using the
  * token from the reset email. The token is single-use and expires after a
- * short window (see RESET_TIMEOUT on the server).
+ * short window (see RESET_TIMEOUT on the server). Expired tokens reject with
+ * 410 and a `code: 'RESET_TOKEN_EXPIRED'` body, carried on the thrown error
+ * so the reset page can offer to send a fresh link.
  */
 export async function resetPassword (token, password) {
   const res = await fetch(`${BASE}/auth/reset-password`, {
@@ -491,7 +518,30 @@ export async function resetPassword (token, password) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Failed to reset password' }))
-    throw new Error(err.error || 'Failed to reset password')
+    const error = new Error(err.error || 'Failed to reset password')
+    error.status = res.status
+    error.code = err.code
+    throw error
+  }
+  return res.json()
+}
+
+/**
+ * POST /auth/renew-reset-token - public endpoint; reissue the password-reset
+ * link for the account holding `token` (e.g. one that just came back
+ * expired) and email a fresh link. Responds identically whether or not the
+ * token matches an account, so callers should show a generic confirmation
+ * message on success.
+ */
+export async function renewResetToken (token) {
+  const res = await fetch(`${BASE}/auth/renew-reset-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token })
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to renew password reset' }))
+    throw new Error(err.error || 'Failed to renew password reset')
   }
   return res.json()
 }

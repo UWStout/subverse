@@ -5,8 +5,14 @@ import { Router, json } from 'express'
 import { getDatabase } from '../db.js'
 import { authenticate, requireVerified, JWT_SECRET, TOKEN_TTL } from '../middleware/auth.js'
 import { verifyBootstrapToken } from '../bootstrap.js'
-import { generateVerificationToken, deliverVerificationEmail, verifyEmailByToken, reissueVerificationToken } from '../verification.js'
-import { requestPasswordReset, deliverPasswordResetEmail, resetPasswordByToken } from '../password-reset.js'
+import { generateVerificationToken, deliverVerificationEmail, verifyEmailByToken, reissueVerificationToken, renewVerificationByToken } from '../verification.js'
+import {
+  requestPasswordReset,
+  deliverPasswordResetEmail,
+  deliverSetPasswordEmail,
+  resetPasswordByToken,
+  renewPasswordResetByToken
+} from '../password-reset.js'
 import { setUserPassword, bestEffortSvn } from '../subversion.js'
 
 // Lazily resolve the database client on first request (avoids ESM init-order issues)
@@ -141,7 +147,12 @@ authRouter.post('/verify-email', async (req, res) => {
       return res.status(400).json({ error: 'Invalid verification token' })
     }
     if (result.expired) {
-      return res.status(410).json({ error: 'Verification token has expired. Request a new one.' })
+      // The code lets the client offer a targeted remedy (re-sending a fresh
+      // link) instead of a dead end.
+      return res.status(410).json({
+        error: 'Verification token has expired. Request a new one.',
+        code: 'VERIFICATION_TOKEN_EXPIRED'
+      })
     }
 
     console.log(`Email verified for user '${result.user.username}' (${result.user.email})`)
@@ -196,7 +207,12 @@ authRouter.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Invalid reset token' })
     }
     if (result.expired) {
-      return res.status(410).json({ error: 'Reset token has expired. Request a new one.' })
+      // The code lets the client offer a targeted remedy (re-sending a fresh
+      // link) instead of a dead end.
+      return res.status(410).json({
+        error: 'Reset token has expired. Request a new one.',
+        code: 'RESET_TOKEN_EXPIRED'
+      })
     }
 
     console.log(`Password reset for user '${result.user.username}' (${result.user.email})`)
@@ -209,6 +225,73 @@ authRouter.post('/reset-password', async (req, res) => {
   } catch (err) {
     console.error('Error resetting password:', err)
     res.status(500).json({ error: 'Failed to reset password' })
+  }
+})
+
+// POST /auth/renew-reset-token - public; reissue and re-send a password
+// reset link for the account holding `token` (typically one that just came
+// back expired, since expired tokens stay in the database). The response is
+// identical whether or not the token matches an account (don't leak which
+// tokens exist, mirroring forgot-password); delivery failures are logged
+// only. Accounts without a password yet get the "set your password" email
+// instead of the reset one, matching how their link was originally sent.
+authRouter.post('/renew-reset-token', async (req, res) => {
+  try {
+    const { token } = req.body || {}
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Missing required field: token' })
+    }
+
+    const result = await renewPasswordResetByToken(token)
+    if (result) {
+      // Best-effort delivery: the fresh token is already stored, so a retry
+      // of this route simply reissues again.
+      const sent = result.user.password_hash == null
+        ? await deliverSetPasswordEmail(result.user, result.token)
+        : await deliverPasswordResetEmail(result.user, result.token)
+      if (!sent) {
+        console.error(`Failed to deliver renewed reset email to ${result.user.email}`)
+      } else {
+        console.log(`Renewed password reset link sent for user '${result.user.username}' (${result.user.email})`)
+      }
+    }
+
+    res.json({ message: 'If the link matched an account, a new password reset email has been sent' })
+  } catch (err) {
+    console.error('Error renewing password reset token:', err)
+    res.status(500).json({ error: 'Failed to renew password reset request' })
+  }
+})
+
+// POST /auth/renew-verification-token - public; reissue and re-send the
+// verification email for the account holding `token` (typically one that
+// just came back expired, since expired tokens stay in the database). The
+// response is identical whether or not the token matches an account (don't
+// leak which tokens exist, mirroring forgot-password); delivery failures
+// are logged only.
+authRouter.post('/renew-verification-token', async (req, res) => {
+  try {
+    const { token } = req.body || {}
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Missing required field: token' })
+    }
+
+    const result = await renewVerificationByToken(token)
+    if (result) {
+      // Best-effort delivery: the fresh token is already stored, so a retry
+      // of this route simply reissues again.
+      const sent = await deliverVerificationEmail(result.user, result.token)
+      if (!sent) {
+        console.error(`Failed to deliver renewed verification email to ${result.user.email}`)
+      } else {
+        console.log(`Renewed verification email sent for user '${result.user.username}' (${result.user.email})`)
+      }
+    }
+
+    res.json({ message: 'If the link matched an account, a new verification email has been sent' })
+  } catch (err) {
+    console.error('Error renewing verification token:', err)
+    res.status(500).json({ error: 'Failed to renew verification request' })
   }
 })
 

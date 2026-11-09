@@ -29,9 +29,11 @@ import {
   fetchCurrentUser,
   isEmailVerified,
   verifyEmail,
+  renewVerificationToken,
   resendVerification,
   requestPasswordReset,
   resetPassword,
+  renewResetToken,
   fetchBootstrapStatus,
   createBootstrapAccount
 } from '../src/services/api'
@@ -604,9 +606,21 @@ describe('services/api', () => {
     })
 
     it('throws the server error for an expired token (410)', async () => {
-      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Verification token has expired. Request a new one.' }, false))
+      // A real Response exposes .status; include it so the helper carries it onto the error
+      fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 410,
+        json: () => Promise.resolve({
+          error: 'Verification token has expired. Request a new one.',
+          code: 'VERIFICATION_TOKEN_EXPIRED'
+        })
+      })
 
-      await expect(verifyEmail('old')).rejects.toThrow(/expired/)
+      const err = await verifyEmail('old').catch(e => e)
+      expect(err.message).toMatch(/expired/)
+      // The status and code ride along so the verify page can offer a fresh link
+      expect(err.status).toBe(410)
+      expect(err.code).toBe('VERIFICATION_TOKEN_EXPIRED')
     })
 
     it('falls back to its default message when the body is not valid JSON', async () => {
@@ -639,6 +653,28 @@ describe('services/api', () => {
       fetch.mockResolvedValueOnce(jsonResponse({ error: 'Email address already verified' }, false))
 
       await expect(resendVerification()).rejects.toThrow('Email address already verified')
+    })
+  })
+
+  describe('renewVerificationToken', () => {
+    it('posts the token without an auth header (public endpoint)', async () => {
+      setToken('tok123') // a stored session token must NOT be sent - renew-verification-token is public
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'If the link matched an account, a new verification email has been sent' }))
+
+      const res = await renewVerificationToken('old-token')
+
+      expect(fetch).toHaveBeenCalledWith('/auth/renew-verification-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: 'old-token' })
+      })
+      expect(res.message).toMatch(/new verification email has been sent/i)
+    })
+
+    it('throws the server error on failure (500)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Failed to renew verification request' }, false))
+
+      await expect(renewVerificationToken('old-token')).rejects.toThrow(/failed to renew/i)
     })
   })
 
@@ -692,15 +728,49 @@ describe('services/api', () => {
     })
 
     it('throws the server error for an expired token (410)', async () => {
-      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Reset token has expired. Request a new one.' }, false))
+      // A real Response exposes .status; include it so the helper carries it onto the error
+      fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 410,
+        json: () => Promise.resolve({
+          error: 'Reset token has expired. Request a new one.',
+          code: 'RESET_TOKEN_EXPIRED'
+        })
+      })
 
-      await expect(resetPassword('old', 'new-secret-1')).rejects.toThrow(/expired/)
+      const err = await resetPassword('old', 'new-secret-1').catch(e => e)
+      expect(err.message).toMatch(/expired/)
+      // The status and code ride along so the reset page can offer a fresh link
+      expect(err.status).toBe(410)
+      expect(err.code).toBe('RESET_TOKEN_EXPIRED')
     })
 
     it('falls back to its default message when the body is not valid JSON', async () => {
       fetch.mockResolvedValueOnce(badJsonResponse())
 
       await expect(resetPassword('x', 'y')).rejects.toThrow('Failed to reset password')
+    })
+  })
+
+  describe('renewResetToken', () => {
+    it('posts the token without an auth header (public endpoint)', async () => {
+      setToken('tok123') // a stored session token must NOT be sent - renew-reset-token is public
+      fetch.mockResolvedValueOnce(jsonResponse({ message: 'If the link matched an account, a new password reset email has been sent' }))
+
+      const res = await renewResetToken('old-token')
+
+      expect(fetch).toHaveBeenCalledWith('/auth/renew-reset-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: 'old-token' })
+      })
+      expect(res.message).toMatch(/new password reset email has been sent/i)
+    })
+
+    it('throws the server error on failure (500)', async () => {
+      fetch.mockResolvedValueOnce(jsonResponse({ error: 'Failed to renew password reset request' }, false))
+
+      await expect(renewResetToken('old-token')).rejects.toThrow(/failed to renew/i)
     })
   })
 

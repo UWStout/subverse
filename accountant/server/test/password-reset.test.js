@@ -135,13 +135,15 @@ describe('Password Reset Flow', () => {
       expect(mockPrisma.user.update).not.toHaveBeenCalled()
     })
 
-    it('returns 410 when the token is past its lifetime', async () => {
+    it('returns 410 with an expired code when the token is past its lifetime', async () => {
       const stale = { ...TEST_USER, reset_token: RESET_TOKEN, reset_sent_at: new Date(Date.now() - 16 * 60_000).toISOString() }
       mockPrisma.user.findFirst.mockResolvedValue(stale)
 
       const res = await request(app).post('/auth/reset-password').send({ token: RESET_TOKEN, password: 'x' })
       expect(res.status).toBe(410)
       expect(res.body.error).toMatch(/expired/i)
+      // The client keys off this code to offer a fresh link
+      expect(res.body.code).toBe('RESET_TOKEN_EXPIRED')
       // Expired tokens are not consumed; a new request can be made
       expect(mockPrisma.user.update).not.toHaveBeenCalled()
     })
@@ -150,6 +152,68 @@ describe('Password Reset Flow', () => {
       mockPrisma.user.findFirst.mockRejectedValue(new Error('DB down'))
 
       const res = await request(app).post('/auth/reset-password').send({ token: RESET_TOKEN, password: 'x' })
+      expect(res.status).toBe(500)
+    })
+  })
+
+  // ---- POST /auth/renew-reset-token ----
+  describe('POST /auth/renew-reset-token', () => {
+    it('returns 400 when token is missing', async () => {
+      const res = await request(app).post('/auth/renew-reset-token').send({})
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/required/i)
+    })
+
+    it('reissues a fresh token and re-sends the reset email when an account holds the token', async () => {
+      const holder = { ...TEST_USER, reset_token: RESET_TOKEN, reset_sent_at: new Date(Date.now() - 16 * 60_000).toISOString() }
+      mockPrisma.user.findFirst.mockResolvedValue(holder)
+      mockPrisma.user.update.mockImplementation(async ({ data }) => ({ ...holder, ...data }))
+
+      const res = await request(app).post('/auth/renew-reset-token').send({ token: RESET_TOKEN })
+      expect(res.status).toBe(200)
+      expect(res.body.message).toMatch(/new password reset email has been sent/i)
+
+      // The stored token is replaced (and the send time reset, restarting the TTL)
+      const updateCall = mockPrisma.user.update.mock.calls[0][0]
+      expect(updateCall.where).toEqual({ id: TEST_USER.id })
+      expect(updateCall.data.reset_token).toMatch(/^[a-f0-9]{64}$/)
+      expect(updateCall.data.reset_token).not.toBe(RESET_TOKEN)
+      expect(updateCall.data.reset_sent_at).toBeInstanceOf(Date)
+
+      // The fresh token is emailed, not the stale one
+      expect(mockMailer.sendPasswordResetEmail).toHaveBeenCalledTimes(1)
+      const [emailedUser, emailedToken] = mockMailer.sendPasswordResetEmail.mock.calls[0]
+      expect(emailedUser.email).toBe(TEST_USER.email)
+      expect(emailedToken).toBe(updateCall.data.reset_token)
+    })
+
+    it('sends the set-password email for accounts without a password yet', async () => {
+      const holder = { ...TEST_USER, password_hash: null, reset_token: RESET_TOKEN, reset_sent_at: new Date(Date.now() - 16 * 60_000).toISOString() }
+      mockPrisma.user.findFirst.mockResolvedValue(holder)
+      mockPrisma.user.update.mockImplementation(async ({ data }) => ({ ...holder, ...data }))
+
+      const res = await request(app).post('/auth/renew-reset-token').send({ token: RESET_TOKEN })
+      expect(res.status).toBe(200)
+      expect(mockMailer.sendSetPasswordEmail).toHaveBeenCalledTimes(1)
+      expect(mockMailer.sendPasswordResetEmail).not.toHaveBeenCalled()
+    })
+
+    it('responds identically when no account holds the token (no enumeration)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null)
+
+      const res = await request(app).post('/auth/renew-reset-token').send({ token: 'nope' })
+      expect(res.status).toBe(200)
+      // Same generic message as the found case
+      expect(res.body.message).toMatch(/new password reset email has been sent/i)
+      expect(mockPrisma.user.update).not.toHaveBeenCalled()
+      expect(mockMailer.sendPasswordResetEmail).not.toHaveBeenCalled()
+      expect(mockMailer.sendSetPasswordEmail).not.toHaveBeenCalled()
+    })
+
+    it('returns 500 when the database fails', async () => {
+      mockPrisma.user.findFirst.mockRejectedValue(new Error('DB down'))
+
+      const res = await request(app).post('/auth/renew-reset-token').send({ token: RESET_TOKEN })
       expect(res.status).toBe(500)
     })
   })

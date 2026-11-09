@@ -11,7 +11,7 @@ import {
   Typography
 } from '@mui/material'
 import MailOutlinedIcon from '@mui/icons-material/MailOutlined'
-import { verifyEmail, resendVerification, fetchCurrentUser, isEmailVerified } from '../services/api'
+import { verifyEmail, renewVerificationToken, resendVerification, fetchCurrentUser, isEmailVerified } from '../services/api'
 import { homePathFor } from '../components/Header'
 
 /**
@@ -23,6 +23,12 @@ import { homePathFor } from '../components/Header'
  * unverified user is told to check their inbox and can request a fresh link;
  * a verified user is pointed back into the app. Unverified sessions are
  * redirected here by PrivateRoute whenever they try to open a protected page.
+ *
+ * Verification links are only valid for a short time, so an expired token
+ * gets its own state: instead of a dead-end error, the page offers to
+ * immediately reissue the email (POST /auth/renew-verification-token with
+ * the stale token) or to fall back to signing in and requesting a link
+ * there.
  */
 export default function VerifyEmail () {
   const [searchParams] = useSearchParams()
@@ -34,6 +40,12 @@ export default function VerifyEmail () {
   const [verifying, setVerifying] = useState(!!token)
   const [verified, setVerified] = useState(false)
   const [error, setError] = useState('')
+  // Expired-token state: the link is stale, so offer to reissue a new one
+  // instead of showing a dead-end error.
+  const [expired, setExpired] = useState(false)
+  const [renewing, setRenewing] = useState(false)
+  const [renewed, setRenewed] = useState(false)
+  const [renewError, setRenewError] = useState('')
 
   // The last token already exchanged for this mount. The verification token
   // is single-use, so the request must go out at most once per token even
@@ -67,9 +79,30 @@ export default function VerifyEmail () {
           }
         }
       })
-      .catch(err => setError(err.message))
+      .catch(err => {
+        if (err.code === 'VERIFICATION_TOKEN_EXPIRED') {
+          // The link is stale - switch to the expired view, which offers a
+          // fresh link, rather than leaving a dead-end error on screen.
+          setExpired(true)
+        } else {
+          setError(err.message)
+        }
+      })
       .finally(() => setVerifying(false))
   }, [token])
+
+  async function handleRenew () {
+    setRenewing(true)
+    setRenewError('')
+    try {
+      await renewVerificationToken(token)
+      setRenewed(true)
+    } catch (err) {
+      setRenewError(err.message)
+    } finally {
+      setRenewing(false)
+    }
+  }
 
   async function handleResend () {
     setResending(true)
@@ -121,6 +154,41 @@ export default function VerifyEmail () {
           </Button>
         </>
       )
+    } else if (expired) {
+      view = renewed
+        ? (
+          <>
+            <Alert severity='success' sx={{ mb: 2 }}>
+              A new verification email has been sent. Open the newest link from
+              your email to continue - any older links are no longer valid.
+            </Alert>
+            <Button component={Link} to='/login' variant='contained' size='large'>
+              Sign In
+            </Button>
+          </>
+        )
+        : (
+          <>
+            <Alert severity='warning' sx={{ mb: 2 }}>
+              This verification link has expired. Verification links are only
+              valid for a short time for security reasons.
+            </Alert>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {renewError && (
+                <Alert severity='error'>{renewError}</Alert>
+              )}
+              <Button onClick={handleRenew} variant='contained' size='large' disabled={renewing}>
+                {renewing ? 'Sending…' : 'Send Me a New Link'}
+              </Button>
+              <Typography variant='body2' color='text.secondary' sx={{ textAlign: 'center' }}>
+                Or sign in and request a new verification link from that page.
+              </Typography>
+            </Box>
+            <Button component={Link} to='/login' variant='outlined' size='large' sx={{ mt: 2 }}>
+              Sign In
+            </Button>
+          </>
+        )
     } else {
       view = (
         <>
