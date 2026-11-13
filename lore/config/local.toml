@@ -1,0 +1,8 @@
+[storage]
+root = "/data"
+
+[server]
+bind_address = "0.0.0.0:41337"
+http_bind_address = "0.0.0.0:41339"
+tls_cert_path = "/etc/lore/cert.pem"
+tls_key_path = "/etc/lore/key.pem"

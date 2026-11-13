@@ -9,6 +9,7 @@ include:
   - path: ./traefik/docker-compose.yaml
   - path: ./portainer/docker-compose.yaml
   - path: ./subversion/docker-compose.yaml
+  # - path: ./lore/docker-compose.yaml
   - path: ./accountant/docker-compose.yaml
 
 volumes:
@@ -25,3 +26,10 @@ volumes:
       type: none
       o: bind
       device: ${GIT_ROOT}
+
+  # lore-root:
+  #   driver: local
+  #   driver_opts:
+  #     type: none
+  #     o: bind
+  #     device: ${LORE_ROOT}
