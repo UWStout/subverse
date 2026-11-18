@@ -9,29 +9,51 @@ services:
       - "41337:41337/udp"
       - "41339:41339/tcp"
     volumes:
-      - ${CERT_FILE}:/etc/lore/cert.pem:ro
-      - ${CERT_KEY_FILE}:/etc/lore/key.pem:ro
       - ${COMPOSE_ROOT}/lore/config/local.toml:/etc/lore/config/local.toml:ro
+      - "${CERT_FILE}:/etc/lore/cert.crt:ro"
+      - "${CERT_KEY_FILE}:/etc/lore/cert.key:ro"
       - lore-root:/data
 
     environment:
-      - LORE_CONFIG: /etc/lore/config/local.toml
+      LORE_CONFIG: /etc/lore/config/local.toml
 
     networks:
       - traefik
 
     labels:
-      - traefik.enable: true
-      - traefik.docker.network: traefik
+      traefik.enable: true
+      traefik.docker.network: traefik
 
       # 1. TCP Router with TLS Passthrough for gRPC (Port 41337)
-      - traefik.tcp.routers.lore-grpc.rule: HostSNI(`lore.${BASE_DOMAIN}`)
-      - traefik.tcp.routers.lore-grpc.entrypoints: websecure
-      - traefik.tcp.routers.lore-grpc.tls.passthrough: true
-      - traefik.tcp.routers.lore-grpc.service: lore-grpc-svc
-      - traefik.tcp.services.lore-grpc-svc.loadbalancer.server.port: 41337
+      traefik.tcp.routers.lore-grpc.rule: HostSNI(`lore.${BASE_DOMAIN}`)
+      traefik.tcp.routers.lore-grpc.entrypoints: websecure
+      traefik.tcp.routers.lore-grpc.tls.passthrough: true
+      traefik.tcp.routers.lore-grpc.service: lore-grpc-svc
+      traefik.tcp.services.lore-grpc-svc.loadbalancer.server.port: 41337
 
       # 2. UDP Router for QUIC (Requires a UDP entrypoint on port 41337 in Traefik)
-      - traefik.udp.routers.lore-quic.entrypoints: lore-udp
-      - traefik.udp.routers.lore-quic.service: lore-quic-svc
-      - traefik.udp.services.lore-quic-svc.loadbalancer.server.port: 41337
+      traefik.udp.routers.lore-quic.entrypoints: lore-udp
+      traefik.udp.routers.lore-quic.service: lore-quic-svc
+      traefik.udp.services.lore-quic-svc.loadbalancer.server.port: 41337
+
+  lore-webgui:
+    image: ghcr.io/juddisjudd/lore-webgui:latest
+    container_name: lore-webgui
+    restart: unless-stopped
+    environment:
+      - LORE_HOST=lore.${BASE_DOMAIN}
+      - AUTH=accounts
+    volumes:
+      - ${COMPOSE_ROOT}/lore/web-data:/data
+    networks:
+      - traefik
+
+    labels:
+      traefik.enable: true
+      traefik.docker.network: traefik
+
+      traefik.http.routers.lore-webgui.rule: "Host(`loreweb.${BASE_DOMAIN}`)"
+      traefik.http.routers.lore-webgui.entrypoints: websecure
+      traefik.http.routers.lore-webgui.tls: true
+      traefik.http.routers.lore-webgui.service: lore-webgui-svc
+      traefik.http.services.lore-webgui-svc.loadbalancer.server.port: 7337

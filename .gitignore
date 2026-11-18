@@ -3,13 +3,10 @@
 *.env
 certs
 
-# Subversion Repositories
+# Repositories
 svn-root/*
-!svn-root/.gitkeep
-
-# GitLab Repositories
-gitlab-root/*
-!gitlab-root/.gitkeep
+git-root/*
+lore-root/*
 
 # Traefik logs and certs
 traefik/acme.json
@@ -17,6 +14,9 @@ traefik/logs
 
 # Portainer Data
 portainer/portainer_data
+
+# lore webgui data
+lore/web-data
 
 # Dependency caches
 node_modules
